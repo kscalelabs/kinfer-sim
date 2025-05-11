@@ -8,6 +8,7 @@ import traceback
 from pathlib import Path
 
 import colorlogging
+import numpy as np
 import typed_argparse as tap
 from kinfer.rust_bindings import PyModelRunner
 from kscale import K
@@ -16,6 +17,7 @@ from kscale.web.utils import get_robots_dir, should_refresh_file
 
 from kinfer_sim.provider import ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
+from kinfer_sim.viewer import save_video
 
 logger = logging.getLogger(__name__)
 
@@ -40,6 +42,7 @@ class ServerConfig(tap.TypedArgs):
     frame_width: int = tap.arg(default=640, help="Frame width")
     frame_height: int = tap.arg(default=480, help="Frame height")
     camera: str | None = tap.arg(default=None, help="Camera to use")
+    save_video: str | None = tap.arg(default=None, help="Path to save video")
 
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
@@ -77,6 +80,7 @@ class SimulationServer:
         self._stop_event = asyncio.Event()
         self._step_lock = asyncio.Semaphore(1)
         self._render_decimation = int(1.0 / config.render_frequency)
+        self._save_video_path = config.save_video
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
@@ -91,6 +95,10 @@ class SimulationServer:
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
         carry = model_runner.init()
 
+        frames: list[np.ndarray] | None = None
+        if self._save_video_path is not None:
+            frames = []
+
         try:
             while not self._stop_event.is_set():
                 # Runs the simulation for one step.
@@ -103,8 +111,11 @@ class SimulationServer:
                 model_runner.take_action(output)
 
                 if num_steps % self._render_decimation == 0:
-                    await self.simulator.render()
+                    self.simulator.render()
                     num_renders += 1
+
+                    if frames is not None:
+                        frames.append(self.simulator.read_pixels())
 
                 # Sleep until the next control update, to avoid rendering
                 # faster than real-time.
@@ -131,8 +142,15 @@ class SimulationServer:
             logger.error("Simulation loop failed: %s", e)
             logger.error("Traceback: %s", traceback.format_exc())
 
+            # Chop off the last frame, since it is sometimes corrupted.
+            if frames is not None and len(frames) > 1:
+                frames = frames[:-1]
+
         finally:
             await self.stop()
+
+            if frames is not None:
+                save_video(frames, self._save_video_path, fps=round(self.simulator._control_frequency))
 
     async def start(self) -> None:
         """Start both the gRPC server and simulation loop asynchronously."""

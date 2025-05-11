@@ -187,25 +187,19 @@ class MujocoSimulator:
         mujoco.mj_forward(self._model, self._data)
         mujoco.mj_step(self._model, self._data)
 
-        # Setup viewer after initial step
-        self._render_enabled = self._render_mode == "window"
-
-        self._viewer = None
-
-        if self._render_enabled:
-            self._viewer = get_viewer(
-                mj_model=self._model,
-                mj_data=self._data,
-                render_with_glfw=True,
-                render_width=frame_width,
-                render_height=frame_height,
-                render_shadow=False,
-                render_reflection=False,
-                render_contact_force=False,
-                render_contact_point=False,
-                render_camera_name=self._camera,
-                mode=self._render_mode,
-            )
+        self._viewer = get_viewer(
+            mj_model=self._model,
+            mj_data=self._data,
+            render_with_glfw=True,
+            render_width=frame_width,
+            render_height=frame_height,
+            render_shadow=False,
+            render_reflection=False,
+            render_contact_force=False,
+            render_contact_point=False,
+            render_camera_name=self._camera,
+            mode=self._render_mode,
+        )
 
         # Cache lookups after initialization
         self._sensor_name_to_id = {self._model.sensor(i).name: i for i in range(self._model.nsensor)}
@@ -273,23 +267,11 @@ class MujocoSimulator:
 
         return self._data
 
-    async def render(self) -> None:
-        """Render the simulation asynchronously."""
-        if self._render_enabled:
-            assert self._viewer is not None
-            self._viewer.render()
+    def render(self) -> None:
+        self._viewer.render()
 
-    async def capture_frame(self, camid: int = -1, depth: bool = False) -> tuple[np.ndarray, np.ndarray | None]:
-        """Capture a frame from the simulation using read_pixels.
-
-        Args:
-            camid: Camera ID to use (-1 for free camera)
-            depth: Whether to return depth information
-
-        Returns:
-            RGB image array (and optionally depth array) if depth=True
-        """
-        return np.zeros((480, 640, 3), dtype=np.uint8), None
+    def read_pixels(self) -> np.ndarray:
+        return self._viewer.read_pixels()
 
     async def get_sensor_data(self, name: str) -> np.ndarray:
         """Get data from a named sensor."""
@@ -394,12 +376,10 @@ class MujocoSimulator:
 
     async def close(self) -> None:
         """Clean up simulation resources."""
-        if self._viewer is not None:
-            try:
-                self._viewer.close()
-            except Exception as e:
-                logger.error("Error closing viewer: %s", e)
-            self._viewer = None
+        try:
+            self._viewer.close()
+        except Exception as e:
+            logger.error("Error closing viewer: %s", e)
 
     @property
     def timestep(self) -> float:
