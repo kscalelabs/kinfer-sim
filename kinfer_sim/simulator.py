@@ -90,8 +90,8 @@ class MujocoSimulator:
         render_mode: Literal["window", "offscreen"] = "window",
         freejoint: bool = True,
         start_height: float = 1.5,
-        command_delay_min: float = 0.0,
-        command_delay_max: float = 0.0,
+        command_delay_min: float | None = None,
+        command_delay_max: float | None = None,
         joint_pos_delta_noise: float = 0.0,
         joint_pos_noise: float = 0.0,
         joint_vel_noise: float = 0.0,
@@ -103,6 +103,12 @@ class MujocoSimulator:
         frame_width: int = 640,
         frame_height: int = 480,
     ) -> None:
+        # Chooses some reasonable defaults for the simulated command latency.
+        if command_delay_max is None:
+            command_delay_max = dt * 0.5
+        if command_delay_min is None:
+            command_delay_min = command_delay_max * 0.5
+
         # Stores parameters.
         self._model_path = model_path
         self._metadata = model_metadata

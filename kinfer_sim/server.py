@@ -42,8 +42,8 @@ class ServerConfig(tap.TypedArgs):
     camera: str | None = tap.arg(default=None, help="Camera to use")
 
     # Randomization settings
-    command_delay_min: float = tap.arg(default=0.0, help="Minimum command delay")
-    command_delay_max: float = tap.arg(default=0.0, help="Maximum command delay")
+    command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
+    command_delay_max: float | None = tap.arg(default=None, help="Maximum command delay")
     joint_pos_delta_noise: float = tap.arg(default=0.0, help="Joint position delta noise (degrees)")
     joint_pos_noise: float = tap.arg(default=0.0, help="Joint position noise (degrees)")
     joint_vel_noise: float = tap.arg(default=0.0, help="Joint velocity noise (degrees/second)")
