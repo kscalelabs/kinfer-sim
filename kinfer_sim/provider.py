@@ -74,6 +74,7 @@ class ModelProvider(ModelProviderABC):
     quat_name: str
     acc_name: str
     gyro_name: str
+    arrays: dict[str, np.ndarray]
 
     def __new__(
         cls,
@@ -87,34 +88,45 @@ class ModelProvider(ModelProviderABC):
         self.quat_name = quat_name
         self.acc_name = acc_name
         self.gyro_name = gyro_name
+        self.arrays = {}
         return self
 
     def get_joint_angles(self, joint_names: Sequence[str]) -> np.ndarray:
         angles = [float(self.simulator._data.joint(joint_name).qpos) for joint_name in joint_names]
-        return np.array(angles, dtype=np.float32)
+        angles_array = np.array(angles, dtype=np.float32)
+        self.arrays["joint_angles"] = angles_array
+        return angles_array
 
     def get_joint_angular_velocities(self, joint_names: Sequence[str]) -> np.ndarray:
         velocities = [float(self.simulator._data.joint(joint_name).qvel) for joint_name in joint_names]
-        return np.array(velocities, dtype=np.float32)
+        velocities_array = np.array(velocities, dtype=np.float32)
+        self.arrays["joint_velocities"] = velocities_array
+        return velocities_array
 
     def get_projected_gravity(self) -> np.ndarray:
         gravity = self.simulator._model.opt.gravity
         quat_name = self.quat_name
         sensor = self.simulator._data.sensor(quat_name)
         proj_gravity = rotate_vector_by_quat(gravity, sensor.data, inverse=True)
+        self.arrays["projected_gravity"] = proj_gravity
         return proj_gravity
 
     def get_accelerometer(self) -> np.ndarray:
         sensor = self.simulator._data.sensor(self.acc_name)
-        return sensor.data
+        acc_array = np.array(sensor.data, dtype=np.float32)
+        self.arrays["accelerometer"] = acc_array
+        return acc_array
 
     def get_gyroscope(self) -> np.ndarray:
         sensor = self.simulator._data.sensor(self.gyro_name)
-        return sensor.data
+        gyro_array = np.array(sensor.data, dtype=np.float32)
+        self.arrays["gyroscope"] = gyro_array
+        return gyro_array
 
     def get_command(self) -> np.ndarray:
         raise NotImplementedError("get_command")
 
     def take_action(self, joint_names: Sequence[str], action: np.ndarray) -> None:
         assert action.shape == (len(joint_names),)
+        self.arrays["action"] = action
         self.simulator.command_actuators({name: {"position": action[i]} for i, name in enumerate(joint_names)})

@@ -9,7 +9,7 @@ import logging
 import time
 from pathlib import Path
 from threading import Lock
-from typing import Callable, Literal, Optional, get_args
+from typing import Callable, Literal, get_args
 
 import glfw
 import mujoco
@@ -22,7 +22,7 @@ RenderMode = Literal["window", "offscreen"]
 Callback = Callable[[mujoco.MjModel, mujoco.MjData, mujoco.MjvScene], None]
 
 
-def save_video(frames: list[np.ndarray], save_path: Optional[str | Path] = None, fps: int = 30) -> None:
+def save_video(frames: list[np.ndarray], save_path: str | Path, fps: int = 30) -> None:
     """Save captured frames as video (MP4) or GIF.
 
     Args:
@@ -34,11 +34,7 @@ def save_video(frames: list[np.ndarray], save_path: Optional[str | Path] = None,
         ValueError: If no frames to save or unsupported file extension.
         RuntimeError: If issues with saving video, especially MP4 format issues.
     """
-    if save_path is None:
-        raise ValueError("No path to save video")
-
-    # Use provided path or default
-    path = Path(save_path)
+    (path := Path(save_path)).parent.mkdir(parents=True, exist_ok=True)
 
     if len(frames) == 0:
         raise ValueError("No frames to save")
@@ -82,6 +78,30 @@ def save_video(frames: list[np.ndarray], save_path: Optional[str | Path] = None,
 
         case _:
             raise ValueError(f"Unsupported file extension: {path.suffix}. Expected .mp4 or .gif")
+
+
+def save_logs(logs: list[dict[str, np.ndarray]], save_path: str | Path) -> None:
+    """Save stacked arrays from logs to CSV files.
+
+    Args:
+        logs: List of dictionaries containing arrays to save
+        save_path: Directory to save the CSV files
+    """
+    (path := Path(save_path)).mkdir(parents=True, exist_ok=True)
+
+    all_keys: set[str] = set()
+    for log in logs:
+        all_keys.update(log.keys())
+
+    for key in all_keys:
+        arrays = []
+        for log in logs:
+            if key in log:
+                arrays.append(log[key])
+
+        if arrays:
+            stacked = np.stack(arrays)
+            np.savetxt(path / f"{key}.tsv", stacked, delimiter="\t")
 
 
 class DefaultMujocoViewer:

@@ -17,7 +17,7 @@ from kscale.web.utils import get_robots_dir, should_refresh_file
 
 from kinfer_sim.provider import ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
-from kinfer_sim.viewer import save_video
+from kinfer_sim.viewer import save_logs, save_video
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,9 @@ class ServerConfig(tap.TypedArgs):
     dt: float = tap.arg(default=0.0001, help="Simulation timestep")
     no_gravity: bool = tap.arg(default=False, help="Enable gravity")
     start_height: float = tap.arg(default=1.5, help="Start height")
+    quat_name: str = tap.arg(default="imu_site_quat", help="Name of the quaternion sensor")
+    acc_name: str = tap.arg(default="imu_acc", help="Name of the accelerometer sensor")
+    gyro_name: str = tap.arg(default="imu_gyro", help="Name of the gyroscope sensor")
 
     # Rendering settings
     no_render: bool = tap.arg(default=False, help="Enable rendering")
@@ -42,7 +45,9 @@ class ServerConfig(tap.TypedArgs):
     frame_width: int = tap.arg(default=640, help="Frame width")
     frame_height: int = tap.arg(default=480, help="Frame height")
     camera: str | None = tap.arg(default=None, help="Camera to use")
-    save_video: str | None = tap.arg(default=None, help="Path to save video")
+    save_path: str = tap.arg(default="logs", help="Path to save logs")
+    save_video: bool = tap.arg(default=False, help="Save video")
+    save_logs: bool = tap.arg(default=False, help="Save logs")
 
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
@@ -80,7 +85,12 @@ class SimulationServer:
         self._stop_event = asyncio.Event()
         self._step_lock = asyncio.Semaphore(1)
         self._render_decimation = int(1.0 / config.render_frequency)
-        self._save_video_path = config.save_video
+        self._quat_name = config.quat_name
+        self._acc_name = config.acc_name
+        self._gyro_name = config.gyro_name
+        self._save_path = Path(config.save_path).expanduser().resolve()
+        self._save_video = config.save_video
+        self._save_logs = config.save_logs
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
@@ -91,16 +101,27 @@ class SimulationServer:
         fps_update_interval = 1.0  # Update FPS every second
 
         # Initialize the model runner on the simulator.
-        model_provider = ModelProvider(self.simulator)
+        model_provider = ModelProvider(
+            self.simulator,
+            quat_name=self._quat_name,
+            acc_name=self._acc_name,
+            gyro_name=self._gyro_name,
+        )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
         carry = model_runner.init()
 
         frames: list[np.ndarray] | None = None
-        if self._save_video_path is not None:
+        if self._save_video:
             frames = []
+
+        logs: list[dict[str, np.ndarray]] | None = None
+        if self._save_logs:
+            logs = []
 
         try:
             while not self._stop_event.is_set():
+                model_provider.arrays.clear()
+
                 # Runs the simulation for one step.
                 async with self._step_lock:
                     for _ in range(self.simulator._sim_decimation):
@@ -114,8 +135,11 @@ class SimulationServer:
                     self.simulator.render()
                     num_renders += 1
 
-                    if frames is not None:
-                        frames.append(self.simulator.read_pixels())
+                if frames is not None:
+                    frames.append(self.simulator.read_pixels())
+
+                if logs is not None:
+                    logs.append(model_provider.arrays.copy())
 
                 # Sleep until the next control update, to avoid rendering
                 # faster than real-time.
@@ -150,7 +174,10 @@ class SimulationServer:
             await self.stop()
 
             if frames is not None:
-                save_video(frames, self._save_video_path, fps=round(self.simulator._control_frequency))
+                save_video(frames, self._save_path / "video.mp4", fps=round(self.simulator._control_frequency))
+
+            if logs is not None:
+                save_logs(logs, self._save_path / "logs")
 
     async def start(self) -> None:
         """Start both the gRPC server and simulation loop asynchronously."""
