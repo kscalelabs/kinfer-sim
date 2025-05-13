@@ -34,7 +34,7 @@ class ServerConfig(tap.TypedArgs):
     # Physics settings
     dt: float = tap.arg(default=0.0001, help="Simulation timestep")
     no_gravity: bool = tap.arg(default=False, help="Enable gravity")
-    start_height: float = tap.arg(default=1.5, help="Start height")
+    start_height: float = tap.arg(default=0.0, help="Start height")
     quat_name: str = tap.arg(default="imu_site_quat", help="Name of the quaternion sensor")
     acc_name: str = tap.arg(default="imu_acc", help="Name of the accelerometer sensor")
     gyro_name: str = tap.arg(default="imu_gyro", help="Name of the gyroscope sensor")
