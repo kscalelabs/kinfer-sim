@@ -92,6 +92,7 @@ class MujocoSimulator:
         start_height: float = 1.5,
         command_delay_min: float | None = None,
         command_delay_max: float | None = None,
+        drop_rate: float = 0.0,
         joint_pos_delta_noise: float = 0.0,
         joint_pos_noise: float = 0.0,
         joint_vel_noise: float = 0.0,
@@ -119,6 +120,7 @@ class MujocoSimulator:
         self._start_height = start_height
         self._command_delay_min = command_delay_min
         self._command_delay_max = command_delay_max
+        self._drop_rate = drop_rate
         self._joint_pos_delta_noise = math.radians(joint_pos_delta_noise)
         self._joint_pos_noise = math.radians(joint_pos_noise)
         self._joint_vel_noise = math.radians(joint_vel_noise)
@@ -305,6 +307,10 @@ class MujocoSimulator:
             # Calculate random delay and application time
             delay = np.random.uniform(self._command_delay_min, self._command_delay_max)
             application_time = self._sim_time + delay
+
+            # Randomly drop some actions.
+            if random.random() < self._drop_rate:
+                continue
 
             self._next_commands[joint_name] = (command, application_time)
 
