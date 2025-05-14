@@ -52,6 +52,7 @@ class ServerConfig(tap.TypedArgs):
 
     # Model settings
     gait_period: float = tap.arg(default=1.2, help="Gait period")
+    use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
 
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
@@ -247,7 +248,9 @@ async def serve(config: ServerConfig) -> None:
     async def default() -> None:
         key_state.value = [1, 0, 0, 0, 0, 0, 0]
 
-    keyboard_controller = KeyboardController(key_handler, default=default)
+    if config.use_keyboard:
+        keyboard_controller = KeyboardController(key_handler, default=default)
+        await keyboard_controller.start()
 
     server = SimulationServer(
         model_path=model_path,
@@ -256,7 +259,6 @@ async def serve(config: ServerConfig) -> None:
         keyboard_state=key_state,
     )
 
-    await keyboard_controller.start()
     await server.start()
 
 
