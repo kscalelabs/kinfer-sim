@@ -49,6 +49,9 @@ class ServerConfig(tap.TypedArgs):
     save_video: bool = tap.arg(default=False, help="Save video")
     save_logs: bool = tap.arg(default=False, help="Save logs")
 
+    # Model settings
+    gait_period: float = tap.arg(default=1.2, help="Gait period")
+
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
     command_delay_max: float | None = tap.arg(default=None, help="Maximum command delay")
@@ -93,6 +96,7 @@ class SimulationServer:
         self._save_path = Path(config.save_path).expanduser().resolve()
         self._save_video = config.save_video
         self._save_logs = config.save_logs
+        self._gait_period = config.gait_period
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
@@ -108,6 +112,7 @@ class SimulationServer:
             quat_name=self._quat_name,
             acc_name=self._acc_name,
             gyro_name=self._gyro_name,
+            gait_period=self._gait_period,
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
         carry = model_runner.init()
