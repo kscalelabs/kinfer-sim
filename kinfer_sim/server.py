@@ -10,12 +10,13 @@ from pathlib import Path
 import colorlogging
 import numpy as np
 import typed_argparse as tap
+from askin import KeyboardController
 from kinfer.rust_bindings import PyModelRunner
 from kscale import K
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
-from kinfer_sim.provider import ModelProvider
+from kinfer_sim.provider import KeyboardInputState, ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
 from kinfer_sim.viewer import save_logs, save_video
 
@@ -67,6 +68,7 @@ class SimulationServer:
         model_path: str | Path,
         model_metadata: RobotURDFMetadataOutput,
         config: ServerConfig,
+        keyboard_state: KeyboardInputState,
     ) -> None:
         self.simulator = MujocoSimulator(
             model_path=model_path,
@@ -97,6 +99,7 @@ class SimulationServer:
         self._save_video = config.save_video
         self._save_logs = config.save_logs
         self._gait_period = config.gait_period
+        self._keyboard_state = keyboard_state
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
@@ -113,8 +116,12 @@ class SimulationServer:
             acc_name=self._acc_name,
             gyro_name=self._gyro_name,
             gait_period=self._gait_period,
+            keyboard_state=self._keyboard_state,
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
+
+        loop = asyncio.get_running_loop()
+
         carry = model_runner.init()
 
         frames: list[np.ndarray] | None = None
@@ -134,9 +141,9 @@ class SimulationServer:
                     for _ in range(self.simulator._sim_decimation):
                         await self.simulator.step()
 
-                # Runs the model runner for one step.
-                output, carry = model_runner.step(carry)
-                model_runner.take_action(output)
+                # Offload blocking calls to the executor
+                output, carry = await loop.run_in_executor(None, model_runner.step, carry)
+                await loop.run_in_executor(None, model_runner.take_action, output)
 
                 if num_steps % self._render_decimation == 0:
                     self.simulator.render()
@@ -232,11 +239,24 @@ async def serve(config: ServerConfig) -> None:
         )
     )
 
+    key_state = KeyboardInputState()
+
+    async def key_handler(key: str) -> None:
+        await key_state.update(key)
+
+    async def default() -> None:
+        key_state.value = [1, 0, 0, 0, 0, 0, 0]
+
+    keyboard_controller = KeyboardController(key_handler, default=default)
+
     server = SimulationServer(
         model_path=model_path,
         model_metadata=model_metadata,
         config=config,
+        keyboard_state=key_state,
     )
+
+    await keyboard_controller.start()
     await server.start()
 
 

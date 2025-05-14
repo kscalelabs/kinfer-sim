@@ -1,11 +1,14 @@
 """Defines a K-Infer model provider for the Mujoco simulator."""
 
+import logging
 from typing import Sequence, cast
 
 import numpy as np
 from kinfer.rust_bindings import ModelProviderABC
 
 from kinfer_sim.simulator import MujocoSimulator
+
+logger = logging.getLogger(__name__)
 
 
 def rotate_vector_by_quat(vector: np.ndarray, quat: np.ndarray, inverse: bool = False, eps: float = 1e-6) -> np.ndarray:
@@ -69,6 +72,25 @@ def rotate_vector_by_quat(vector: np.ndarray, quat: np.ndarray, inverse: bool = 
     return np.concatenate([xx, yy, zz], axis=-1)
 
 
+class KeyboardInputState:
+    def __init__(self) -> None:
+        self.value = [1, 0, 0, 0, 0, 0, 0]
+
+    async def update(self, key: str) -> None:
+        if key == "w":
+            self.value = [0, 1, 0, 0, 0, 0, 0]
+        elif key == "s":
+            self.value = [0, 0, 1, 0, 0, 0, 0]
+        elif key == "a":
+            self.value = [0, 0, 0, 0, 0, 1, 0]
+        elif key == "d":
+            self.value = [0, 0, 0, 0, 0, 0, 1]
+        elif key == "q":
+            self.value = [0, 0, 0, 1, 0, 0, 0]
+        elif key == "e":
+            self.value = [0, 0, 0, 0, 1, 0, 0]
+
+
 class ModelProvider(ModelProviderABC):
     simulator: MujocoSimulator
     quat_name: str
@@ -79,6 +101,7 @@ class ModelProvider(ModelProviderABC):
     def __new__(
         cls,
         simulator: MujocoSimulator,
+        keyboard_state: KeyboardInputState,
         quat_name: str = "imu_site_quat",
         acc_name: str = "imu_acc",
         gyro_name: str = "imu_gyro",
@@ -91,12 +114,14 @@ class ModelProvider(ModelProviderABC):
         self.gyro_name = gyro_name
         self.gait_period = gait_period
         self.arrays = {}
+        self.keyboard_state = keyboard_state
         return self
 
     def get_joint_angles(self, joint_names: Sequence[str]) -> np.ndarray:
         angles = [float(self.simulator._data.joint(joint_name).qpos) for joint_name in joint_names]
         angles_array = np.array(angles, dtype=np.float32)
         self.arrays["joint_angles"] = angles_array
+        self.get_command()
         return angles_array
 
     def get_joint_angular_velocities(self, joint_names: Sequence[str]) -> np.ndarray:
@@ -137,7 +162,9 @@ class ModelProvider(ModelProviderABC):
         return gait_array
 
     def get_command(self) -> np.ndarray:
-        raise NotImplementedError("get_command")
+        command_array = np.array(self.keyboard_state.value, dtype=np.float32)
+        self.arrays["command"] = command_array
+        return command_array
 
     def take_action(self, joint_names: Sequence[str], action: np.ndarray) -> None:
         assert action.shape == (len(joint_names),)
