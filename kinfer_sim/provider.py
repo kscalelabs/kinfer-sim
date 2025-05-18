@@ -73,6 +73,10 @@ def rotate_vector_by_quat(vector: np.ndarray, quat: np.ndarray, inverse: bool = 
 
 
 class KeyboardInputState:
+    """State to hold and modify commands based on keyboard input."""
+
+    value: list[float]
+
     def __init__(self) -> None:
         self.value = [1, 0, 0, 0, 0, 0, 0]
 
@@ -97,6 +101,7 @@ class ModelProvider(ModelProviderABC):
     acc_name: str
     gyro_name: str
     arrays: dict[str, np.ndarray]
+    keyboard_state: KeyboardInputState
 
     def __new__(
         cls,
@@ -105,14 +110,12 @@ class ModelProvider(ModelProviderABC):
         quat_name: str = "imu_site_quat",
         acc_name: str = "imu_acc",
         gyro_name: str = "imu_gyro",
-        gait_period: float = 1.2,
     ) -> "ModelProvider":
         self = cast(ModelProvider, super().__new__(cls))
         self.simulator = simulator
         self.quat_name = quat_name
         self.acc_name = acc_name
         self.gyro_name = gyro_name
-        self.gait_period = gait_period
         self.arrays = {}
         self.keyboard_state = keyboard_state
         return self

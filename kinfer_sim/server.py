@@ -51,7 +51,6 @@ class ServerConfig(tap.TypedArgs):
     save_logs: bool = tap.arg(default=False, help="Save logs")
 
     # Model settings
-    gait_period: float = tap.arg(default=1.2, help="Gait period")
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
 
     # Randomization settings
@@ -99,7 +98,6 @@ class SimulationServer:
         self._save_path = Path(config.save_path).expanduser().resolve()
         self._save_video = config.save_video
         self._save_logs = config.save_logs
-        self._gait_period = config.gait_period
         self._keyboard_state = keyboard_state
 
     async def _simulation_loop(self) -> None:
@@ -116,7 +114,6 @@ class SimulationServer:
             quat_name=self._quat_name,
             acc_name=self._acc_name,
             gyro_name=self._gyro_name,
-            gait_period=self._gait_period,
             keyboard_state=self._keyboard_state,
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
