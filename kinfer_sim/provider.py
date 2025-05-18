@@ -152,14 +152,9 @@ class ModelProvider(ModelProviderABC):
 
     def get_time(self) -> np.ndarray:
         time = self.simulator._data.time
-        time_array = np.array([np.sin(time), np.cos(time)], dtype=np.float32)
+        time_array = np.array([time], dtype=np.float32)
         self.arrays["time"] = time_array
         return time_array
-
-    def get_gait(self) -> np.ndarray:
-        gait_array = np.array([self.gait_period], dtype=np.float32)
-        self.arrays["gait"] = gait_array
-        return gait_array
 
     def get_command(self) -> np.ndarray:
         command_array = np.array(self.keyboard_state.value, dtype=np.float32)
