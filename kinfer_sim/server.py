@@ -35,7 +35,7 @@ class ServerConfig(tap.TypedArgs):
     # Physics settings
     dt: float = tap.arg(default=0.0001, help="Simulation timestep")
     no_gravity: bool = tap.arg(default=False, help="Enable gravity")
-    start_height: float = tap.arg(default=0.0, help="Start height")
+    start_height: float = tap.arg(default=1.1, help="Start height")
     quat_name: str = tap.arg(default="imu_site_quat", help="Name of the quaternion sensor")
     acc_name: str = tap.arg(default="imu_acc", help="Name of the accelerometer sensor")
     gyro_name: str = tap.arg(default="imu_gyro", help="Name of the gyroscope sensor")
@@ -239,13 +239,14 @@ async def serve(config: ServerConfig) -> None:
 
     key_state = KeyboardInputState()
 
-    async def key_handler(key: str) -> None:
-        await key_state.update(key)
-
-    async def default() -> None:
-        key_state.value = [1, 0, 0, 0, 0, 0, 0]
-
     if config.use_keyboard:
+
+        async def key_handler(key: str) -> None:
+            await key_state.update(key)
+
+        async def default() -> None:
+            key_state.value = [1, 0, 0, 0, 0, 0, 0]
+
         keyboard_controller = KeyboardController(key_handler, default=default)
         await keyboard_controller.start()
 

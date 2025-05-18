@@ -124,7 +124,6 @@ class ModelProvider(ModelProviderABC):
         angles = [float(self.simulator._data.joint(joint_name).qpos) for joint_name in joint_names]
         angles_array = np.array(angles, dtype=np.float32)
         self.arrays["joint_angles"] = angles_array
-        self.get_command()
         return angles_array
 
     def get_joint_angular_velocities(self, joint_names: Sequence[str]) -> np.ndarray:
