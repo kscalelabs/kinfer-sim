@@ -3,6 +3,7 @@
 __all__ = [
     "DefaultMujocoViewer",
     "GlfwMujocoViewer",
+    "VideoWriter",
 ]
 
 import logging
@@ -470,6 +471,44 @@ class GlfwMujocoViewer:
         self.is_alive = False
         glfw.terminate()
         self.ctx.free()
+
+
+class VideoWriter:
+    """Utility for streamed recording of frames to an MP4 file."""
+
+    def __init__(self, save_path: str | Path, fps: int = 30) -> None:
+        path = Path(save_path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        if path.suffix.lower() != ".mp4":
+            raise ValueError(
+                "VideoWriter currently supports only .mp4 files for incremental "
+                "saving. Use `save_video` for other formats."
+            )
+
+        try:
+            import imageio.v2 as imageio
+        except ImportError as exc:
+            raise RuntimeError(
+                "Failed to initialize video writer – saving .mp4 videos with "
+                "imageio requires the FFMPEG backend. Install it with "
+                "`pip install 'imageio[ffmpeg]'` and ensure ffmpeg is available "
+                "on your system."
+            ) from exc
+
+        self._writer = imageio.get_writer(path, mode="I", fps=fps)
+        self._path = path
+
+    def append(self, frame: np.ndarray) -> None:
+        """Add a single RGB frame (H×W×3, uint8) to the video on disk."""
+        self._writer.append_data(frame)
+
+    def close(self) -> None:
+        """Finalize the file and release resources."""
+        if self._writer is not None:
+            self._writer.close()
+            logger.info("Saved mp4 video to: %s", self._path)
+            del self._writer
 
 
 def get_viewer(

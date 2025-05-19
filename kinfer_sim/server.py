@@ -18,7 +18,7 @@ from kscale.web.utils import get_robots_dir, should_refresh_file
 
 from kinfer_sim.provider import KeyboardInputState, ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
-from kinfer_sim.viewer import save_logs, save_video
+from kinfer_sim.viewer import VideoWriter, save_logs
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +100,13 @@ class SimulationServer:
         self._save_logs = config.save_logs
         self._keyboard_state = keyboard_state
 
+        self._video_writer: VideoWriter | None = None
+        if self._save_video:
+            self._save_path.mkdir(parents=True, exist_ok=True)
+
+            fps = round(self.simulator._control_frequency)
+            self._video_writer = VideoWriter(self._save_path / "video.mp4", fps=fps)
+
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
         start_time = time.time()
@@ -122,10 +129,6 @@ class SimulationServer:
 
         carry = model_runner.init()
 
-        frames: list[np.ndarray] | None = None
-        if self._save_video:
-            frames = []
-
         logs: list[dict[str, np.ndarray]] | None = None
         if self._save_logs:
             logs = []
@@ -147,11 +150,11 @@ class SimulationServer:
                     self.simulator.render()
                     num_renders += 1
 
-                if frames is not None:
-                    frames.append(self.simulator.read_pixels())
-
                 if logs is not None:
                     logs.append(model_provider.arrays.copy())
+
+                if self._video_writer is not None and num_steps % self._render_decimation == 0:
+                    self._video_writer.append(self.simulator.read_pixels())
 
                 # Sleep until the next control update, to avoid rendering
                 # faster than real-time.
@@ -178,15 +181,11 @@ class SimulationServer:
             logger.error("Simulation loop failed: %s", e)
             logger.error("Traceback: %s", traceback.format_exc())
 
-            # Chop off the last frame, since it is sometimes corrupted.
-            if frames is not None and len(frames) > 1:
-                frames = frames[:-1]
-
         finally:
             await self.stop()
 
-            if frames is not None:
-                save_video(frames, self._save_path / "video.mp4", fps=round(self.simulator._control_frequency))
+            if self._video_writer is not None:
+                self._video_writer.close()
 
             if logs is not None:
                 save_logs(logs, self._save_path / "logs")
