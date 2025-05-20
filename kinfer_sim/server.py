@@ -60,6 +60,10 @@ class ServerConfig(tap.TypedArgs):
     joint_pos_delta_noise: float = tap.arg(default=0.0, help="Joint position delta noise (degrees)")
     joint_pos_noise: float = tap.arg(default=0.0, help="Joint position noise (degrees)")
     joint_vel_noise: float = tap.arg(default=0.0, help="Joint velocity noise (degrees/second)")
+    joint_zero_noise: float = tap.arg(default=0.0, help="Joint zero noise (degrees)")
+    accelerometer_noise: float = tap.arg(default=0.0, help="Accelerometer noise (m/s^2)")
+    gyroscope_noise: float = tap.arg(default=0.0, help="Gyroscope noise (rad/s)")
+    projected_gravity_noise: float = tap.arg(default=0.0, help="Projected gravity noise (m/s^2)")
 
 
 class SimulationServer:
@@ -83,6 +87,10 @@ class SimulationServer:
             joint_pos_delta_noise=config.joint_pos_delta_noise,
             joint_pos_noise=config.joint_pos_noise,
             joint_vel_noise=config.joint_vel_noise,
+            joint_zero_noise=config.joint_zero_noise,
+            accelerometer_noise=config.accelerometer_noise,
+            gyroscope_noise=config.gyroscope_noise,
+            projected_gravity_noise=config.projected_gravity_noise,
             mujoco_scene=config.mujoco_scene,
             camera=config.camera,
             frame_width=config.frame_width,

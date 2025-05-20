@@ -123,12 +123,18 @@ class ModelProvider(ModelProviderABC):
     def get_joint_angles(self, joint_names: Sequence[str]) -> np.ndarray:
         angles = [float(self.simulator._data.joint(joint_name).qpos) for joint_name in joint_names]
         angles_array = np.array(angles, dtype=np.float32)
+        angles_array += np.random.normal(
+            -self.simulator._joint_pos_noise, self.simulator._joint_pos_noise, angles_array.shape
+        )
         self.arrays["joint_angles"] = angles_array
         return angles_array
 
     def get_joint_angular_velocities(self, joint_names: Sequence[str]) -> np.ndarray:
         velocities = [float(self.simulator._data.joint(joint_name).qvel) for joint_name in joint_names]
         velocities_array = np.array(velocities, dtype=np.float32)
+        velocities_array += np.random.normal(
+            -self.simulator._joint_vel_noise, self.simulator._joint_vel_noise, velocities_array.shape
+        )
         self.arrays["joint_velocities"] = velocities_array
         return velocities_array
 
@@ -137,18 +143,27 @@ class ModelProvider(ModelProviderABC):
         quat_name = self.quat_name
         sensor = self.simulator._data.sensor(quat_name)
         proj_gravity = rotate_vector_by_quat(gravity, sensor.data, inverse=True)
+        proj_gravity += np.random.normal(
+            -self.simulator._projected_gravity_noise, self.simulator._projected_gravity_noise, proj_gravity.shape
+        )
         self.arrays["projected_gravity"] = proj_gravity
         return proj_gravity
 
     def get_accelerometer(self) -> np.ndarray:
         sensor = self.simulator._data.sensor(self.acc_name)
         acc_array = np.array(sensor.data, dtype=np.float32)
+        acc_array += np.random.normal(
+            -self.simulator._accelerometer_noise, self.simulator._accelerometer_noise, acc_array.shape
+        )
         self.arrays["accelerometer"] = acc_array
         return acc_array
 
     def get_gyroscope(self) -> np.ndarray:
         sensor = self.simulator._data.sensor(self.gyro_name)
         gyro_array = np.array(sensor.data, dtype=np.float32)
+        gyro_array += np.random.normal(
+            -self.simulator._gyroscope_noise, self.simulator._gyroscope_noise, gyro_array.shape
+        )
         self.arrays["gyroscope"] = gyro_array
         return gyro_array
 
