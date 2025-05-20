@@ -144,14 +144,21 @@ class MujocoSimulator:
         if len(self._joint_name_to_id) != len(self._joint_id_to_name):
             raise ValueError("Joint IDs are not unique!")
 
+        # ------------------------------------------------------------------
+        # Actuator instances (one per real joint)
+        # ------------------------------------------------------------------
         self._actuators: dict[int, Actuator] = {}
+        if self._metadata.actuator_type_to_metadata is None:
+            raise ValueError("Actuator metadata is missing")
+
         for joint_name, joint_meta in self._metadata.joint_name_to_metadata.items():
             joint_id = self._joint_name_to_id[joint_name]
+            act_type = joint_meta.actuator_type or "position"
+            act_meta = self._metadata.actuator_type_to_metadata.get(act_type)
             self._actuators[joint_id] = create_actuator(
-                actuator_type=joint_meta.actuator_type or "position",
-                kp=float(_nn(joint_meta.kp)),
-                kd=float(_nn(joint_meta.kd)),
-                max_torque=None,
+                joint_meta,
+                act_meta,
+                dt=self._dt,
             )
 
         # Chooses some random deltas for the joint positions.
@@ -247,16 +254,15 @@ class MujocoSimulator:
 
         mujoco.mj_forward(self._model, self._data)
 
-        # Uses actuators to set ctrl values from the current commands.
         for joint_name, target_command in self._current_commands.items():
+            joint = self._data.joint(joint_name)
             joint_id = self._joint_name_to_id[joint_name]
             actuator_id = self._joint_id_to_actuator_id[joint_id]
-            actuator = self._actuators[joint_id]
 
-            torque = actuator.get_ctrl(
+            torque = self._actuators[joint_id].get_ctrl(
                 target_command,
-                qpos=self._data.joint(joint_name).qpos,
-                qvel=self._data.joint(joint_name).qvel,
+                qpos=float(joint.qpos),
+                qvel=float(joint.qvel),
                 dt=self._dt,
             )
             logger.debug("Setting ctrl for actuator %s to %f", actuator_id, torque)
