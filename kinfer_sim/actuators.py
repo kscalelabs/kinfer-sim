@@ -137,7 +137,7 @@ def trapezoidal_step(
     a_max: float,
     dt: float,
 ) -> PlannerState:
-    """Scalar trapezoidal velocity planner (matches KSim logic)."""
+    """Scalar trapezoidal velocity planner."""
     pos_err = target_pos - state.position
     direction = 1.0 if pos_err >= 0 else -1.0
     stop_dist = (state.velocity**2) / (2 * a_max) if a_max > 0 else 0.0
@@ -156,7 +156,7 @@ def trapezoidal_step(
 
 @register_actuator("feetech")
 class FeetechActuator(Actuator):
-    """Duty-cycle model for Feetech STS servos (adapted from KSim)."""
+    """Duty-cycle model for Feetech STS servos."""
 
     def __init__(
         self,
