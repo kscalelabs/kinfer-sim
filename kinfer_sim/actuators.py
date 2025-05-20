@@ -75,7 +75,7 @@ class Actuator(ABC):
         pass
 
 
-@register_actuator("robstride", "position", "")
+@register_actuator("robstride", "position")
 class PositionActuator(Actuator):
     """Plain PD controller with optional torque saturation."""
 
