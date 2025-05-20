@@ -144,9 +144,6 @@ class MujocoSimulator:
         if len(self._joint_name_to_id) != len(self._joint_id_to_name):
             raise ValueError("Joint IDs are not unique!")
 
-        # ------------------------------------------------------------------
-        # Actuator instances (one per real joint)
-        # ------------------------------------------------------------------
         self._actuators: dict[int, Actuator] = {}
         if self._metadata.actuator_type_to_metadata is None:
             raise ValueError("Actuator metadata is missing")
@@ -259,10 +256,9 @@ class MujocoSimulator:
             joint_id = self._joint_name_to_id[joint_name]
             actuator_id = self._joint_id_to_actuator_id[joint_id]
 
-            cmd: ActuatorCommandDict = target_command  # TypedDict view
-
+            actuator_command_dict: ActuatorCommandDict = target_command
             torque = self._actuators[joint_id].get_ctrl(
-                cmd,
+                actuator_command_dict,
                 qpos=float(joint.qpos),
                 qvel=float(joint.qvel),
                 dt=self._dt,
@@ -330,7 +326,7 @@ class MujocoSimulator:
         if joint_id not in self._actuators:
             raise KeyError(f"Joint ID {joint_id} does not have an actuator. Known IDs: {list(self._actuators)}")
 
-        # Flatten TypedDict into a regular dict and drop None entries
+        # Keep only numeric fields (kp, kd, max_torque) and cast them to float
         cfg: dict[str, float] = {k: float(v) for k, v in configuration.items() if isinstance(v, (int, float))}
 
         self._actuators[joint_id].configure(**cfg)

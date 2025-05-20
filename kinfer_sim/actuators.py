@@ -33,7 +33,6 @@ def register_actuator(*prefixes: str) -> Callable[[Type["Actuator"]], Type["Actu
     return decorator
 
 
-# Base class
 class ActuatorCommandDict(TypedDict, total=False):
     """Keys an actuator may receive each control step."""
 
@@ -45,7 +44,6 @@ class ActuatorCommandDict(TypedDict, total=False):
 class Actuator(ABC):
     """Abstract per-joint actuator."""
 
-    # ── factory ──────────────────────────────────────────────────────────────
     @classmethod
     @abstractmethod
     def from_metadata(
@@ -57,11 +55,10 @@ class Actuator(ABC):
     ) -> "Actuator":
         """Create an actuator instance from K-Scale metadata."""
 
-    # ── public API used by the simulator ─────────────────────────────────────
     @abstractmethod
     def get_ctrl(
         self,
-        cmd: ActuatorCommandDict,  # ← use the new type
+        cmd: ActuatorCommandDict,
         *,
         qpos: float,
         qvel: float,
@@ -69,17 +66,13 @@ class Actuator(ABC):
     ) -> float:
         """Return torque for the current physics step."""
 
-    # NEW: generic run-time re-configuration hook
-    def configure(self, **kwargs: float) -> None:  # noqa: D401 – simple mutator
+    def configure(self, **kwargs: float) -> None:
         """Update actuator gains/limits at run-time.
 
         Sub-classes may override; the default implementation silently ignores
         unknown keys so callers don't need to special-case actuator types.
         """
         pass
-
-
-# Robstride / PD position actuator
 
 
 @register_actuator("robstride", "position", "")
@@ -121,17 +114,13 @@ class PositionActuator(Actuator):
             torque = float(np.clip(torque, -self.max_torque, self.max_torque))
         return torque
 
-    # --- run-time tuning ---
-    def configure(self, **kwargs: float) -> None:  # noqa: D401
+    def configure(self, **kwargs: float) -> None:
         if "kp" in kwargs:
             self.kp = kwargs["kp"]
         if "kd" in kwargs:
             self.kd = kwargs["kd"]
         if "max_torque" in kwargs:
             self.max_torque = kwargs["max_torque"]
-
-
-# Feetech actuator and planner
 
 
 @dataclass
@@ -245,17 +234,13 @@ class FeetechActuator(Actuator):
         torque = duty * self.vin * self.kt / self.R
         return float(np.clip(torque, -self.max_torque, self.max_torque))
 
-    # --- run-time tuning ---
-    def configure(self, **kwargs: float) -> None:  # noqa: D401
+    def configure(self, **kwargs: float) -> None:
         if "kp" in kwargs:
             self.kp = kwargs["kp"]
         if "kd" in kwargs:
             self.kd = kwargs["kd"]
         if "max_torque" in kwargs:
             self.max_torque = kwargs["max_torque"]
-
-
-# Factory
 
 
 def create_actuator(
