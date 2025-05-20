@@ -13,7 +13,7 @@ import numpy as np
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from mujoco_scenes.mjcf import load_mjmodel
 
-from kinfer_sim.actuators import Actuator, create_actuator
+from kinfer_sim.actuators import Actuator, ActuatorCommandDict, create_actuator
 from kinfer_sim.viewer import get_viewer
 
 logger = logging.getLogger(__name__)
@@ -259,8 +259,10 @@ class MujocoSimulator:
             joint_id = self._joint_name_to_id[joint_name]
             actuator_id = self._joint_id_to_actuator_id[joint_id]
 
+            cmd: ActuatorCommandDict = target_command  # TypedDict view
+
             torque = self._actuators[joint_id].get_ctrl(
-                target_command,
+                cmd,
                 qpos=float(joint.qpos),
                 qvel=float(joint.qvel),
                 dt=self._dt,
@@ -319,21 +321,19 @@ class MujocoSimulator:
 
             self._next_commands[joint_name] = (command, application_time)
 
-    async def configure_actuator(self, joint_id: int, configuration: ConfigureActuatorRequest) -> None:
-        """Configure an actuator using real joint ID."""
+    async def configure_actuator(
+        self,
+        joint_id: int,
+        configuration: ConfigureActuatorRequest,
+    ) -> None:
+        """Forward configuration dict to the actuator instance."""
         if joint_id not in self._actuators:
-            raise KeyError(
-                f"Joint ID {joint_id} does not have an actuator. "
-                f"The current joint ID to actuator ID mapping is: {self._joint_id_to_actuator_id}"
-            )
+            raise KeyError(f"Joint ID {joint_id} does not have an actuator. Known IDs: {list(self._actuators)}")
 
-        actuator = self._actuators[joint_id]
-        if "kp" in configuration:
-            actuator.kp = configuration["kp"]
-        if "kd" in configuration:
-            actuator.kd = configuration["kd"]
-        if "max_torque" in configuration:
-            actuator.max_torque = configuration["max_torque"]
+        # Flatten TypedDict into a regular dict and drop None entries
+        cfg: dict[str, float] = {k: float(v) for k, v in configuration.items() if isinstance(v, (int, float))}
+
+        self._actuators[joint_id].configure(**cfg)
 
     @property
     def sim_time(self) -> float:

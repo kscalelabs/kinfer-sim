@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Dict, Optional, Type
+from typing import Callable, Optional, Type, TypedDict
 
 import numpy as np
 from kscale.web.gen.api import ActuatorMetadataOutput, JointMetadataOutput
@@ -21,10 +21,10 @@ def _as_float(value: str | float | None, *, default: Optional[float] = None) -> 
     return float(value)
 
 
-_actuator_registry: Dict[str, Type["Actuator"]] = {}
+_actuator_registry: dict[str, Type["Actuator"]] = {}
 
 
-def register_actuator(*prefixes: str) -> callable:
+def register_actuator(*prefixes: str) -> Callable[[Type["Actuator"]], Type["Actuator"]]:
     def decorator(cls: Type["Actuator"]) -> Type["Actuator"]:
         for p in prefixes:
             _actuator_registry[p.lower()] = cls
@@ -34,14 +34,49 @@ def register_actuator(*prefixes: str) -> callable:
 
 
 # Base class
+class ActuatorCommandDict(TypedDict, total=False):
+    """Keys an actuator may receive each control step."""
+
+    position: float
+    velocity: float
+    torque: float
 
 
 class Actuator(ABC):
     """Abstract per-joint actuator."""
 
+    # ── factory ──────────────────────────────────────────────────────────────
+    @classmethod
     @abstractmethod
-    def get_ctrl(self, cmd: Dict[str, float], *, qpos: float, qvel: float, dt: float) -> float:
+    def from_metadata(
+        cls,
+        joint_meta: JointMetadataOutput,
+        actuator_meta: ActuatorMetadataOutput | None,
+        *,
+        dt: float,
+    ) -> "Actuator":
+        """Create an actuator instance from K-Scale metadata."""
+
+    # ── public API used by the simulator ─────────────────────────────────────
+    @abstractmethod
+    def get_ctrl(
+        self,
+        cmd: ActuatorCommandDict,  # ← use the new type
+        *,
+        qpos: float,
+        qvel: float,
+        dt: float,
+    ) -> float:
         """Return torque for the current physics step."""
+
+    # NEW: generic run-time re-configuration hook
+    def configure(self, **kwargs: float) -> None:  # noqa: D401 – simple mutator
+        """Update actuator gains/limits at run-time.
+
+        Sub-classes may override; the default implementation silently ignores
+        unknown keys so callers don't need to special-case actuator types.
+        """
+        pass
 
 
 # Robstride / PD position actuator
@@ -69,7 +104,14 @@ class PositionActuator(Actuator):
             max_torque = float(actuator_meta.max_torque)
         return cls(kp=_as_float(joint_meta.kp), kd=_as_float(joint_meta.kd), max_torque=max_torque)
 
-    def get_ctrl(self, cmd: Dict[str, float], *, qpos: float, qvel: float, dt: float) -> float:
+    def get_ctrl(
+        self,
+        cmd: ActuatorCommandDict,
+        *,
+        qpos: float,
+        qvel: float,
+        dt: float,
+    ) -> float:
         torque = (
             self.kp * (cmd.get("position", 0.0) - qpos)
             + self.kd * (cmd.get("velocity", 0.0) - qvel)
@@ -78,6 +120,15 @@ class PositionActuator(Actuator):
         if self.max_torque is not None:
             torque = float(np.clip(torque, -self.max_torque, self.max_torque))
         return torque
+
+    # --- run-time tuning ---
+    def configure(self, **kwargs: float) -> None:  # noqa: D401
+        if "kp" in kwargs:
+            self.kp = kwargs["kp"]
+        if "kd" in kwargs:
+            self.kd = kwargs["kd"]
+        if "max_torque" in kwargs:
+            self.max_torque = kwargs["max_torque"]
 
 
 # Feetech actuator and planner
@@ -89,18 +140,29 @@ class PlannerState:
     velocity: float
 
 
-def trapezoidal_step(state: PlannerState, target_pos: float, *, v_max: float, a_max: float, dt: float) -> PlannerState:
-    """Scalar trapezoidal velocity planner matching KSim implementation."""
+def trapezoidal_step(
+    state: PlannerState,
+    target_pos: float,
+    *,
+    v_max: float,
+    a_max: float,
+    dt: float,
+) -> PlannerState:
+    """Scalar trapezoidal velocity planner (matches KSim logic)."""
     pos_err = target_pos - state.position
-    direction = np.sign(pos_err)
-    stop_dist = (state.velocity**2) / (2 * a_max)
+    direction = 1.0 if pos_err >= 0 else -1.0
+    stop_dist = (state.velocity**2) / (2 * a_max) if a_max > 0 else 0.0
 
-    accel = np.where(np.abs(pos_err) > stop_dist, direction * a_max, -direction * a_max)
-    new_vel = np.clip(state.velocity + accel * dt, -v_max, v_max)
+    accel = direction * a_max if abs(pos_err) > stop_dist else -direction * a_max
+    new_vel = state.velocity + accel * dt
+    new_vel = max(-v_max, min(v_max, new_vel))
+
+    # Prevent overshoot when decelerating past zero
     if direction * new_vel < 0:
         new_vel = 0.0
+
     new_pos = state.position + new_vel * dt
-    return PlannerState(position=float(new_pos), velocity=float(new_vel))
+    return PlannerState(position=new_pos, velocity=new_vel)
 
 
 @register_actuator("feetech")
@@ -152,14 +214,21 @@ class FeetechActuator(Actuator):
             max_pwm=_as_float(actuator_meta.max_pwm, default=1.0),
             vin=_as_float(actuator_meta.vin, default=12.0),
             kt=_as_float(actuator_meta.kt, default=1.0),
-            R=_as_float(actuator_meta.R, default=1.0),
+            r=_as_float(actuator_meta.R, default=1.0),
             error_gain=_as_float(actuator_meta.error_gain, default=1.0),
             v_max=_as_float(actuator_meta.max_velocity, default=5.0),
             a_max=_as_float(actuator_meta.amax, default=17.45),
             dt=dt,
         )
 
-    def get_ctrl(self, cmd: Dict[str, float], *, qpos: float, qvel: float, dt: float) -> float:
+    def get_ctrl(
+        self,
+        cmd: ActuatorCommandDict,
+        *,
+        qpos: float,
+        qvel: float,
+        dt: float,
+    ) -> float:
         if self._state is None:
             self._state = PlannerState(position=qpos, velocity=qvel)
         self._state = trapezoidal_step(
@@ -175,6 +244,15 @@ class FeetechActuator(Actuator):
         duty = float(np.clip(duty, -self.max_pwm, self.max_pwm))
         torque = duty * self.vin * self.kt / self.R
         return float(np.clip(torque, -self.max_torque, self.max_torque))
+
+    # --- run-time tuning ---
+    def configure(self, **kwargs: float) -> None:  # noqa: D401
+        if "kp" in kwargs:
+            self.kp = kwargs["kp"]
+        if "kd" in kwargs:
+            self.kd = kwargs["kd"]
+        if "max_torque" in kwargs:
+            self.max_torque = kwargs["max_torque"]
 
 
 # Factory
