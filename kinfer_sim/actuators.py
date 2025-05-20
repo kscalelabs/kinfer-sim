@@ -1,4 +1,4 @@
-"""Actuators classes and helpers for kinfer-sim."""
+"""Actuators for kinfer-sim."""
 
 from __future__ import annotations
 
@@ -66,9 +66,13 @@ class Actuator(ABC):
     ) -> float:
         """Return torque for the current physics step."""
 
-    @abstractmethod
     def configure(self, **kwargs: float) -> None:
-        """Update actuator gains/limits at run-time."""
+        """Update actuator gains/limits at run-time.
+
+        Sub-classes may override; the default implementation silently ignores
+        unknown keys so callers don't need to special-case actuator types.
+        """
+        pass
 
 
 @register_actuator("robstride", "position", "")
@@ -88,12 +92,8 @@ class PositionActuator(Actuator):
         *,
         dt: float,
     ) -> "PositionActuator":
-        # First check joint-level soft torque limit
         max_torque = None
-        if joint_meta.soft_torque_limit is not None:
-            max_torque = float(joint_meta.soft_torque_limit)
-        # Fall back to actuator-level max torque if needed
-        elif actuator_meta and actuator_meta.max_torque is not None:
+        if actuator_meta and actuator_meta.max_torque is not None:
             max_torque = float(actuator_meta.max_torque)
         return cls(kp=_as_float(joint_meta.kp), kd=_as_float(joint_meta.kd), max_torque=max_torque)
 
