@@ -13,6 +13,7 @@ import numpy as np
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from mujoco_scenes.mjcf import load_mjmodel
 
+from kinfer_sim.actuators import Actuator, create_actuator
 from kinfer_sim.viewer import get_viewer
 
 logger = logging.getLogger(__name__)
@@ -138,20 +139,20 @@ class MujocoSimulator:
         if self._metadata.joint_name_to_metadata is None:
             raise ValueError("Joint name to metadata is not set")
 
-        # Gets the IDs, KPs, and KDs for each joint.
         self._joint_name_to_id = {name: _nn(joint.id) for name, joint in self._metadata.joint_name_to_metadata.items()}
-        self._joint_name_to_kp: dict[str, float] = {
-            name: float(_nn(joint.kp)) for name, joint in self._metadata.joint_name_to_metadata.items()
-        }
-        self._joint_name_to_kd: dict[str, float] = {
-            name: float(_nn(joint.kd)) for name, joint in self._metadata.joint_name_to_metadata.items()
-        }
-        self._joint_name_to_max_torque: dict[str, float] = {}
-
-        # Gets the inverse mapping.
         self._joint_id_to_name = {v: k for k, v in self._joint_name_to_id.items()}
         if len(self._joint_name_to_id) != len(self._joint_id_to_name):
             raise ValueError("Joint IDs are not unique!")
+
+        self._actuators: dict[int, Actuator] = {}
+        for joint_name, joint_meta in self._metadata.joint_name_to_metadata.items():
+            joint_id = self._joint_name_to_id[joint_name]
+            self._actuators[joint_id] = create_actuator(
+                actuator_type=joint_meta.actuator_type or "position",
+                kp=float(_nn(joint_meta.kp)),
+                kd=float(_nn(joint_meta.kd)),
+                max_torque=None,
+            )
 
         # Chooses some random deltas for the joint positions.
         self._joint_name_to_pos_delta = {
@@ -246,22 +247,20 @@ class MujocoSimulator:
 
         mujoco.mj_forward(self._model, self._data)
 
-        # Sets the ctrl values from the current commands.
-        for name, target_command in self._current_commands.items():
-            joint = self._data.joint(name)
-            joint_id = self._joint_name_to_id[name]
+        # Uses actuators to set ctrl values from the current commands.
+        for joint_name, target_command in self._current_commands.items():
+            joint_id = self._joint_name_to_id[joint_name]
             actuator_id = self._joint_id_to_actuator_id[joint_id]
-            kp = self._joint_name_to_kp[name]
-            kd = self._joint_name_to_kd[name]
-            target_torque = (
-                kp * (target_command.get("position", 0.0) - joint.qpos)
-                + kd * (target_command.get("velocity", 0.0) - joint.qvel)
-                + target_command.get("torque", 0.0)
+            actuator = self._actuators[joint_id]
+
+            torque = actuator.get_ctrl(
+                target_command,
+                qpos=self._data.joint(joint_name).qpos,
+                qvel=self._data.joint(joint_name).qvel,
+                dt=self._dt,
             )
-            if (max_torque := self._joint_name_to_max_torque.get(name)) is not None:
-                target_torque = np.clip(target_torque, -max_torque, max_torque)
-            logger.debug("Setting ctrl for actuator %s to %f", actuator_id, target_torque)
-            self._data.ctrl[actuator_id] = target_torque
+            logger.debug("Setting ctrl for actuator %s to %f", actuator_id, torque)
+            self._data.ctrl[actuator_id] = torque
 
         mujoco.mj_forward(self._model, self._data)
         mujoco.mj_step(self._model, self._data)
@@ -316,19 +315,19 @@ class MujocoSimulator:
 
     async def configure_actuator(self, joint_id: int, configuration: ConfigureActuatorRequest) -> None:
         """Configure an actuator using real joint ID."""
-        if joint_id not in self._joint_id_to_actuator_id:
+        if joint_id not in self._actuators:
             raise KeyError(
-                f"Joint ID {joint_id} not found in config mappings. "
-                f"The available joint IDs are {self._joint_id_to_actuator_id.keys()}"
+                f"Joint ID {joint_id} does not have an actuator. "
+                f"The current joint ID to actuator ID mapping is: {self._joint_id_to_actuator_id}"
             )
 
-        joint_name = self._joint_id_to_name[joint_id]
+        actuator = self._actuators[joint_id]
         if "kp" in configuration:
-            self._joint_name_to_kp[joint_name] = configuration["kp"]
+            actuator.kp = configuration["kp"]
         if "kd" in configuration:
-            self._joint_name_to_kd[joint_name] = configuration["kd"]
+            actuator.kd = configuration["kd"]
         if "max_torque" in configuration:
-            self._joint_name_to_max_torque[joint_name] = configuration["max_torque"]
+            actuator.max_torque = configuration["max_torque"]
 
     @property
     def sim_time(self) -> float:
