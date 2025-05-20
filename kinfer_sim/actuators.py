@@ -5,17 +5,12 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Dict, Optional, Type
+from typing import Dict, Optional, Type
 
 import numpy as np
 from kscale.web.gen.api import ActuatorMetadataOutput, JointMetadataOutput
 
 logger = logging.getLogger(__name__)
-
-def _not_none(value: Any | None) -> Any:
-    if value is None:
-        raise ValueError("Required metadata field is missing")
-    return value
 
 
 def _as_float(value: str | float | None, *, default: Optional[float] = None) -> float:
@@ -26,8 +21,6 @@ def _as_float(value: str | float | None, *, default: Optional[float] = None) -> 
     return float(value)
 
 
-
-
 _actuator_registry: Dict[str, Type["Actuator"]] = {}
 
 
@@ -36,10 +29,12 @@ def register_actuator(*prefixes: str) -> callable:
         for p in prefixes:
             _actuator_registry[p.lower()] = cls
         return cls
+
     return decorator
 
 
 # Base class
+
 
 class Actuator(ABC):
     """Abstract per-joint actuator."""
@@ -50,6 +45,7 @@ class Actuator(ABC):
 
 
 # Robstride / PD position actuator
+
 
 @register_actuator("robstride", "position", "")
 class PositionActuator(Actuator):
@@ -71,7 +67,7 @@ class PositionActuator(Actuator):
         max_torque = None
         if actuator_meta and actuator_meta.max_torque is not None:
             max_torque = float(actuator_meta.max_torque)
-        return cls(kp=float(_not_none(joint_meta.kp)), kd=float(_not_none(joint_meta.kd)), max_torque=max_torque)
+        return cls(kp=_as_float(joint_meta.kp), kd=_as_float(joint_meta.kd), max_torque=max_torque)
 
     def get_ctrl(self, cmd: Dict[str, float], *, qpos: float, qvel: float, dt: float) -> float:
         torque = (
@@ -85,6 +81,7 @@ class PositionActuator(Actuator):
 
 
 # Feetech actuator and planner
+
 
 @dataclass
 class PlannerState:
@@ -119,7 +116,7 @@ class FeetechActuator(Actuator):
         max_pwm: float,
         vin: float,
         kt: float,
-        R: float,
+        r: float,
         error_gain: float,
         v_max: float,
         a_max: float,
@@ -131,7 +128,7 @@ class FeetechActuator(Actuator):
         self.max_pwm = max_pwm
         self.vin = vin
         self.kt = kt
-        self.R = R
+        self.R = r
         self.error_gain = error_gain
         self.v_max = v_max
         self.a_max = a_max
@@ -149,8 +146,8 @@ class FeetechActuator(Actuator):
         if actuator_meta is None:
             raise ValueError("Feetech actuator metadata missing")
         return cls(
-            kp=float(_not_none(joint_meta.kp)),
-            kd=float(_not_none(joint_meta.kd)),
+            kp=_as_float(joint_meta.kp),
+            kd=_as_float(joint_meta.kd),
             max_torque=_as_float(actuator_meta.max_torque),
             max_pwm=_as_float(actuator_meta.max_pwm, default=1.0),
             vin=_as_float(actuator_meta.vin, default=12.0),
@@ -181,6 +178,7 @@ class FeetechActuator(Actuator):
 
 
 # Factory
+
 
 def create_actuator(
     joint_meta: JointMetadataOutput,
