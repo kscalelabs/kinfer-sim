@@ -6,6 +6,7 @@ import logging
 import time
 import traceback
 from pathlib import Path
+import os
 
 import colorlogging
 import numpy as np
@@ -60,7 +61,16 @@ class ServerConfig(tap.TypedArgs):
     joint_pos_delta_noise: float = tap.arg(default=0.0, help="Joint position delta noise (degrees)")
     joint_pos_noise: float = tap.arg(default=0.0, help="Joint position noise (degrees)")
     joint_vel_noise: float = tap.arg(default=0.0, help="Joint velocity noise (degrees/second)")
-
+    
+    no_logs: bool = tap.arg(
+        default=False,
+        help="Disable Rerun logging entirely",
+    )
+    logdir: str | None = tap.arg(
+        default=None,
+        help="Directory in which to store timestamped .rrd files "
+             "(defaults to ~/.kscale/kinfer/logs)",
+    )
 
 class SimulationServer:
     def __init__(
@@ -265,6 +275,20 @@ async def run_server(config: ServerConfig) -> None:
 
 def runner(args: ServerConfig) -> None:
     colorlogging.configure(level=logging.DEBUG if args.debug else logging.INFO)
+    if args.no_logs:
+        os.environ.pop("KINFER_LOG_PATH", None)
+    else:
+        log_dir = (
+            Path(args.logdir).expanduser().resolve()
+            if args.logdir is not None
+            else Path("~/.kscale/kinfer/logs").expanduser().resolve()
+        )
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        log_path = log_dir / f"{ts}.rrd"
+        os.environ["KINFER_LOG_PATH"] = str(log_path)
+        
     asyncio.run(run_server(config=args))
 
 
