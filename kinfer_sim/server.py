@@ -3,6 +3,7 @@
 import asyncio
 import itertools
 import logging
+import os
 import time
 import traceback
 from pathlib import Path
@@ -64,6 +65,15 @@ class ServerConfig(tap.TypedArgs):
     accelerometer_noise: float = tap.arg(default=0.0, help="Accelerometer noise (m/s^2)")
     gyroscope_noise: float = tap.arg(default=0.0, help="Gyroscope noise (rad/s)")
     projected_gravity_noise: float = tap.arg(default=0.0, help="Projected gravity noise (m/s^2)")
+
+    no_logs: bool = tap.arg(
+        default=False,
+        help="Disable logging",
+    )
+    logdir: str | None = tap.arg(
+        default=None,
+        help="Directory in which to store timestamped .ndjson files (defaults to ~/.kscale/kinfer/logs)",
+    )
 
 
 class SimulationServer:
@@ -273,6 +283,20 @@ async def run_server(config: ServerConfig) -> None:
 
 def runner(args: ServerConfig) -> None:
     colorlogging.configure(level=logging.DEBUG if args.debug else logging.INFO)
+    if args.no_logs:
+        os.environ.pop("KINFER_LOG_PATH", None)
+    else:
+        log_dir = (
+            Path(args.logdir).expanduser().resolve()
+            if args.logdir is not None
+            else Path("~/.kscale/kinfer/logs").expanduser().resolve()
+        )
+        log_dir.mkdir(parents=True, exist_ok=True)
+
+        ts = time.strftime("%Y%m%d-%H%M%S")
+        log_path = log_dir / f"{ts}.ndjson"
+        os.environ["KINFER_LOG_PATH"] = str(log_path)
+
     asyncio.run(run_server(config=args))
 
 
