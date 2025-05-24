@@ -3,10 +3,10 @@
 import asyncio
 import itertools
 import logging
+import os
 import time
 import traceback
 from pathlib import Path
-import os
 
 import colorlogging
 import numpy as np
@@ -61,16 +61,16 @@ class ServerConfig(tap.TypedArgs):
     joint_pos_delta_noise: float = tap.arg(default=0.0, help="Joint position delta noise (degrees)")
     joint_pos_noise: float = tap.arg(default=0.0, help="Joint position noise (degrees)")
     joint_vel_noise: float = tap.arg(default=0.0, help="Joint velocity noise (degrees/second)")
-    
+
     no_logs: bool = tap.arg(
         default=False,
-        help="Disable Rerun logging entirely",
+        help="Disable logging",
     )
     logdir: str | None = tap.arg(
         default=None,
-        help="Directory in which to store timestamped .rrd files "
-             "(defaults to ~/.kscale/kinfer/logs)",
+        help="Directory in which to store timestamped .ndjson files (defaults to ~/.kscale/kinfer/logs)",
     )
+
 
 class SimulationServer:
     def __init__(
@@ -288,7 +288,7 @@ def runner(args: ServerConfig) -> None:
         ts = time.strftime("%Y%m%d-%H%M%S")
         log_path = log_dir / f"{ts}.ndjson"
         os.environ["KINFER_LOG_PATH"] = str(log_path)
-        
+
     asyncio.run(run_server(config=args))
 
 
