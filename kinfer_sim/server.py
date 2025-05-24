@@ -286,7 +286,7 @@ def runner(args: ServerConfig) -> None:
         log_dir.mkdir(parents=True, exist_ok=True)
 
         ts = time.strftime("%Y%m%d-%H%M%S")
-        log_path = log_dir / f"{ts}.rrd"
+        log_path = log_dir / f"{ts}.ndjson"
         os.environ["KINFER_LOG_PATH"] = str(log_path)
         
     asyncio.run(run_server(config=args))
