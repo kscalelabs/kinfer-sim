@@ -6,6 +6,7 @@ import logging
 import time
 import traceback
 from pathlib import Path
+from typing import Literal
 
 import colorlogging
 import numpy as np
@@ -16,7 +17,7 @@ from kscale import K
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
-from kinfer_sim.provider import KeyboardInputState, ModelProvider
+from kinfer_sim.provider import ControlVectorInputState, InputState, JoystickInputState, ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
 from kinfer_sim.viewer import VideoWriter, save_logs
 
@@ -52,6 +53,7 @@ class ServerConfig(tap.TypedArgs):
 
     # Model settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
+    command_type: Literal["joystick", "control_vector"] = tap.arg(default="joystick", help="Type of command to use")
 
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
@@ -72,7 +74,7 @@ class SimulationServer:
         model_path: str | Path,
         model_metadata: RobotURDFMetadataOutput,
         config: ServerConfig,
-        keyboard_state: KeyboardInputState,
+        keyboard_state: InputState,
     ) -> None:
         self.simulator = MujocoSimulator(
             model_path=model_path,
@@ -244,17 +246,27 @@ async def serve(config: ServerConfig) -> None:
         )
     )
 
-    key_state = KeyboardInputState()
+    if config.command_type == "joystick":
+        key_state = JoystickInputState()
+    elif config.command_type == "control_vector":
+        key_state = ControlVectorInputState()
+    else:
+        raise ValueError(f"Invalid command type: {config.command_type}")
 
     if config.use_keyboard:
 
         async def key_handler(key: str) -> None:
             await key_state.update(key)
 
-        async def default() -> None:
-            key_state.value = [1, 0, 0, 0, 0, 0, 0]
+        if config.command_type == "joystick":
 
-        keyboard_controller = KeyboardController(key_handler, default=default)
+            async def default() -> None:
+                key_state.value = [1, 0, 0, 0, 0, 0, 0]
+
+            keyboard_controller = KeyboardController(key_handler, default=default)
+        elif config.command_type == "control_vector":
+            keyboard_controller = KeyboardController(key_handler)
+
         await keyboard_controller.start()
 
     server = SimulationServer(

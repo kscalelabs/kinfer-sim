@@ -1,6 +1,7 @@
 """Defines a K-Infer model provider for the Mujoco simulator."""
 
 import logging
+from abc import ABC, abstractmethod
 from typing import Sequence, cast
 
 import numpy as np
@@ -72,8 +73,19 @@ def rotate_vector_by_quat(vector: np.ndarray, quat: np.ndarray, inverse: bool = 
     return np.concatenate([xx, yy, zz], axis=-1)
 
 
-class KeyboardInputState:
-    """State to hold and modify commands based on keyboard input."""
+class InputState(ABC):
+    """Abstract base class for input state management."""
+
+    value: list[float]
+
+    @abstractmethod
+    async def update(self, key: str) -> None:
+        """Update the input state based on a key press."""
+        pass
+
+
+class JoystickInputState(InputState):
+    """State to hold and modify commands based on joystick input."""
 
     value: list[float]
 
@@ -95,18 +107,42 @@ class KeyboardInputState:
             self.value = [0, 0, 0, 0, 1, 0, 0]
 
 
+class ControlVectorInputState(InputState):
+    """State to hold and modify control vector commands based on keyboard input."""
+
+    value: list[float]
+    STEP_SIZE: float = 0.1
+
+    def __init__(self) -> None:
+        self.value = [0.0, 0.0, 0.0]  # x linear, y linear, z angular
+
+    async def update(self, key: str) -> None:
+        if key == "w":
+            self.value[0] += self.STEP_SIZE
+        elif key == "s":
+            self.value[0] -= self.STEP_SIZE
+        elif key == "a":
+            self.value[1] -= self.STEP_SIZE
+        elif key == "d":
+            self.value[1] += self.STEP_SIZE
+        elif key == "q":
+            self.value[2] -= self.STEP_SIZE
+        elif key == "e":
+            self.value[2] += self.STEP_SIZE
+
+
 class ModelProvider(ModelProviderABC):
     simulator: MujocoSimulator
     quat_name: str
     acc_name: str
     gyro_name: str
     arrays: dict[str, np.ndarray]
-    keyboard_state: KeyboardInputState
+    keyboard_state: InputState
 
     def __new__(
         cls,
         simulator: MujocoSimulator,
-        keyboard_state: KeyboardInputState,
+        keyboard_state: InputState,
         quat_name: str = "imu_site_quat",
         acc_name: str = "imu_acc",
         gyro_name: str = "imu_gyro",
