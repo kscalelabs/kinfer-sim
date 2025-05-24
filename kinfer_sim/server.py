@@ -246,6 +246,8 @@ async def serve(config: ServerConfig) -> None:
         )
     )
 
+    key_state: InputState
+
     if config.command_type == "joystick":
         key_state = JoystickInputState()
     elif config.command_type == "control_vector":
