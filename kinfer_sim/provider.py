@@ -2,6 +2,7 @@
 
 import logging
 from typing import Sequence, cast
+from queue import Queue
 
 import numpy as np
 from kinfer.rust_bindings import ModelProviderABC
@@ -71,28 +72,94 @@ def rotate_vector_by_quat(vector: np.ndarray, quat: np.ndarray, inverse: bool = 
 
     return np.concatenate([xx, yy, zz], axis=-1)
 
+def euler_to_quat(euler_3: np.ndarray) -> np.ndarray:
+    """Converts roll, pitch, yaw angles to a quaternion (w, x, y, z).
 
-class KeyboardInputState:
-    """State to hold and modify commands based on keyboard input."""
+    Args:
+        euler_3: The roll, pitch, yaw angles, shape (*, 3).
 
-    value: list[float]
+    Returns:
+        The quaternion with shape (*, 4).
+    """
+    # Extract roll, pitch, yaw from input
+    roll, pitch, yaw = np.split(euler_3, 3, axis=-1)
 
-    def __init__(self) -> None:
-        self.value = [1, 0, 0, 0, 0, 0, 0]
+    # Calculate trigonometric functions for each angle
+    cr = np.cos(roll * 0.5)
+    sr = np.sin(roll * 0.5)
+    cp = np.cos(pitch * 0.5)
+    sp = np.sin(pitch * 0.5)
+    cy = np.cos(yaw * 0.5)
+    sy = np.sin(yaw * 0.5)
 
-    async def update(self, key: str) -> None:
-        if key == "w":
-            self.value = [0, 1, 0, 0, 0, 0, 0]
-        elif key == "s":
-            self.value = [0, 0, 1, 0, 0, 0, 0]
-        elif key == "a":
-            self.value = [0, 0, 0, 0, 0, 1, 0]
-        elif key == "d":
-            self.value = [0, 0, 0, 0, 0, 0, 1]
-        elif key == "q":
-            self.value = [0, 0, 0, 1, 0, 0, 0]
-        elif key == "e":
-            self.value = [0, 0, 0, 0, 1, 0, 0]
+    # Calculate quaternion components using the conversion formula
+    w = cr * cp * cy + sr * sp * sy
+    x = sr * cp * cy - cr * sp * sy
+    y = cr * sp * cy + sr * cp * sy
+    z = cr * cp * sy - sr * sp * cy
+
+    # Combine into quaternion [w, x, y, z]
+    quat = np.concatenate([w, x, y, z], axis=-1)
+
+    # Normalize the quaternion
+    quat = quat / np.linalg.norm(quat, axis=-1, keepdims=True)
+
+    return quat
+
+def rotate_quat(q1, q2):
+    """Rotate quaternion q1 by quaternion q2.
+    
+    Args:
+        q1: quaternion to be rotated [w, x, y, z]
+        q2: quaternion to rotate by [w, x, y, z]
+    
+    Returns:
+        rotated quaternion [w, x, y, z]
+    """
+    w1, x1, y1, z1 = q1
+    w2, x2, y2, z2 = q2
+    
+    return np.array([
+        w1*w2 - x1*x2 - y1*y2 - z1*z2,  # w
+        w1*x2 + x1*w2 + y1*z2 - z1*y2,  # x
+        w1*y2 - x1*z2 + y1*w2 + z1*x2,  # y
+        w1*z2 + x1*y2 - y1*x2 + z1*w2   # z
+    ])
+
+def quat_to_euler(quat_4: np.ndarray, eps: float = 1e-6) -> np.ndarray:
+    """Normalizes and converts a quaternion (w, x, y, z) to roll, pitch, yaw.
+
+    Args:
+        quat_4: The quaternion to convert, shape (*, 4).
+        eps: A small epsilon value to avoid division by zero.
+
+    Returns:
+        The roll, pitch, yaw angles with shape (*, 3).
+    """
+    quat_4 = quat_4 / (np.linalg.norm(quat_4, axis=-1, keepdims=True) + eps)
+    w, x, y, z = np.split(quat_4, 4, axis=-1)
+
+    # Roll (x-axis rotation)
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+    # Pitch (y-axis rotation)
+    sinp = 2.0 * (w * y - z * x)
+
+    # Handle edge cases where |sinp| >= 1
+    pitch = np.where(
+        np.abs(sinp) >= 1.0,
+        np.sign(sinp) * np.pi / 2.0,  # Use 90 degrees if out of range
+        np.arcsin(sinp),
+    )
+
+    # Yaw (z-axis rotation)
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+    return np.concatenate([roll, pitch, yaw], axis=-1)
 
 
 class ModelProvider(ModelProviderABC):
@@ -101,12 +168,14 @@ class ModelProvider(ModelProviderABC):
     acc_name: str
     gyro_name: str
     arrays: dict[str, np.ndarray]
-    keyboard_state: KeyboardInputState
+    key_queue: Queue | None
+    dt: float
 
     def __new__(
         cls,
         simulator: MujocoSimulator,
-        keyboard_state: KeyboardInputState,
+        key_queue: Queue | None,
+        dt: float,
         quat_name: str = "imu_site_quat",
         acc_name: str = "imu_acc",
         gyro_name: str = "imu_gyro",
@@ -117,8 +186,56 @@ class ModelProvider(ModelProviderABC):
         self.acc_name = acc_name
         self.gyro_name = gyro_name
         self.arrays = {}
-        self.keyboard_state = keyboard_state
+        self.key_queue = key_queue
+        self.dt = dt
         return self
+    
+    def process_key_queue(self):
+        if not hasattr(self, 'command_array'):
+            self.command_array = np.zeros(6) # vx vy wz base_height roll pitch
+            quat = self.simulator._data.xquat[1] # TODO HACK obs - need heading on real robot
+            self.heading = quat_to_euler(quat)[2]
+
+        # READ THE KEYS AND UDATE THE COMMAND ARRAY
+        while not self.key_queue.empty():
+            key = self.key_queue.get()
+            key = key.strip("'")
+
+            # reset commands
+            if key == '0':
+                self.command_array *= 0
+            
+            # lin vel
+            if key == 'w':
+                self.command_array[0] += 0.1
+            elif key == 's':
+                self.command_array[0] -= 0.1
+            if key == 'a':
+                self.command_array[1] += 0.1
+            elif key == 'd':
+                self.command_array[1] -= 0.1
+
+            # ang vel
+            if key == 'q':
+                self.command_array[2] += 0.1
+            elif key == 'e':
+                self.command_array[2] -= 0.1
+
+            # height
+            if key == '=':
+                self.command_array[3] += 0.1
+            elif key == '-':
+                self.command_array[3] -= 0.1
+            
+            # base orient
+            if key == 'r':
+                self.command_array[4] += 0.1
+            elif key == 'f':
+                self.command_array[4] -= 0.1
+            if key == 't':
+                self.command_array[5] += 0.1
+            elif key == 'g':
+                self.command_array[5] -= 0.1
 
     def get_joint_angles(self, joint_names: Sequence[str]) -> np.ndarray:
         angles = [float(self.simulator._data.joint(joint_name).qpos) for joint_name in joint_names]
@@ -159,9 +276,27 @@ class ModelProvider(ModelProviderABC):
         return time_array
 
     def get_command(self) -> np.ndarray:
-        command_array = np.array(self.keyboard_state.value, dtype=np.float32)
-        self.arrays["command"] = command_array
-        return command_array
+        # Process any queued keyboard commands
+        if self.key_queue is not None: # TODO this here??
+            self.process_key_queue()
+            logging.info(f"command array: [{', '.join(f'{x:.2f}' for x in self.command_array)}]")
+
+        self.heading += self.command_array[2] * self.dt
+
+        quat = self.simulator._data.xquat[1]
+
+        inv_heading_quat = euler_to_quat(np.array([0, 0, -self.heading]))
+        quat = rotate_quat(quat, inv_heading_quat)
+
+        command_obs = np.concatenate([
+            self.command_array[:3],
+            quat, # TODO HACK obs - need heading on real robot
+            0.0*np.array([self.heading]), # TODO i dont want to feed this to model but training code has it
+            self.command_array[3:],
+        ])
+
+        self.arrays["command"] = command_obs
+        return command_obs # this is not the problem!
 
     def take_action(self, joint_names: Sequence[str], action: np.ndarray) -> None:
         assert action.shape == (len(joint_names),)

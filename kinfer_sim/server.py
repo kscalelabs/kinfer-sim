@@ -6,17 +6,18 @@ import logging
 import time
 import traceback
 from pathlib import Path
+from queue import Queue
 
 import colorlogging
 import numpy as np
 import typed_argparse as tap
-from askin import KeyboardController
 from kinfer.rust_bindings import PyModelRunner
 from kscale import K
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
-from kinfer_sim.provider import KeyboardInputState, ModelProvider
+from kinfer_sim.keyboard_listener import KeyboardListener
+from kinfer_sim.provider import ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
 from kinfer_sim.viewer import save_logs, save_video
 
@@ -68,7 +69,7 @@ class SimulationServer:
         model_path: str | Path,
         model_metadata: RobotURDFMetadataOutput,
         config: ServerConfig,
-        keyboard_state: KeyboardInputState,
+        key_queue: Queue | None,
     ) -> None:
         self.simulator = MujocoSimulator(
             model_path=model_path,
@@ -98,7 +99,8 @@ class SimulationServer:
         self._save_path = Path(config.save_path).expanduser().resolve()
         self._save_video = config.save_video
         self._save_logs = config.save_logs
-        self._keyboard_state = keyboard_state
+        self._key_queue = key_queue
+        self._dt = config.dt
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
@@ -114,7 +116,8 @@ class SimulationServer:
             quat_name=self._quat_name,
             acc_name=self._acc_name,
             gyro_name=self._gyro_name,
-            keyboard_state=self._keyboard_state,
+            key_queue=self._key_queue,
+            dt=self._dt,
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
 
@@ -237,24 +240,17 @@ async def serve(config: ServerConfig) -> None:
         )
     )
 
-    key_state = KeyboardInputState()
-
+    key_queue = None
     if config.use_keyboard:
+        keyboard_listener = KeyboardListener()
+        key_queue = keyboard_listener.get_key_queue()
 
-        async def key_handler(key: str) -> None:
-            await key_state.update(key)
-
-        async def default() -> None:
-            key_state.value = [1, 0, 0, 0, 0, 0, 0]
-
-        keyboard_controller = KeyboardController(key_handler, default=default)
-        await keyboard_controller.start()
 
     server = SimulationServer(
         model_path=model_path,
         model_metadata=model_metadata,
         config=config,
-        keyboard_state=key_state,
+        key_queue=key_queue,
     )
 
     await server.start()
