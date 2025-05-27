@@ -17,6 +17,7 @@ from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
 from kinfer_sim.keyboard_listener import KeyboardListener
+from kinfer_sim.reward_plotter import RewardPlotter
 from kinfer_sim.provider import ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
 from kinfer_sim.viewer import save_logs, save_video
@@ -123,6 +124,9 @@ class SimulationServer:
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
 
+        reward_plotter = RewardPlotter()
+        await reward_plotter.start()
+
         loop = asyncio.get_running_loop()
 
         carry = model_runner.init()
@@ -140,12 +144,14 @@ class SimulationServer:
                 model_provider.arrays.clear()
                 if self._reset_queue is not None and not self._reset_queue.empty():
                     await self.simulator.reset()
+                    await reward_plotter.reset()
                     self._reset_queue.get()
 
                 # Runs the simulation for one step.
                 async with self._step_lock:
                     for _ in range(self.simulator._sim_decimation):
                         await self.simulator.step()
+                        await reward_plotter.add_data(self.simulator._data)
 
                 # Offload blocking calls to the executor
                 output, carry = await loop.run_in_executor(None, model_runner.step, carry)
