@@ -158,16 +158,16 @@ class ModelProvider(ModelProviderABC):
 
     def get_inputs(self, input_types: list[str], metadata: PyModelMetadata) -> dict[str, np.ndarray]:
         """Get inputs for the model based on the requested input types.
-        
+
         Args:
             input_types: List of input type names to retrieve
             metadata: Model metadata containing joint names and other info
-            
+
         Returns:
             Dictionary mapping input type names to numpy arrays
         """
         inputs = {}
-        
+
         for input_type in input_types:
             if input_type == "joint_angles":
                 inputs[input_type] = self.get_joint_angles(metadata.joint_names)
@@ -185,7 +185,7 @@ class ModelProvider(ModelProviderABC):
                 inputs[input_type] = self.get_time()
             else:
                 raise ValueError(f"Unknown input type: {input_type}")
-                
+
         return inputs
 
     def get_joint_angles(self, joint_names: Sequence[str]) -> np.ndarray:
@@ -244,14 +244,14 @@ class ModelProvider(ModelProviderABC):
     def get_command(self, metadata: PyModelMetadata) -> np.ndarray:
         # Get the expected number of commands from metadata
         num_commands = metadata.num_commands or 3  # Default to 3 if not specified
-        
+
         # Take only the first num_commands values from keyboard state
         command_values = self.keyboard_state.value[:num_commands]
-        
+
         # Pad with zeros if we don't have enough values
         while len(command_values) < num_commands:
             command_values.append(0.0)
-            
+
         command_array = np.array(command_values, dtype=np.float32)
         self.arrays["command"] = command_array
         return command_array
