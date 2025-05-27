@@ -70,6 +70,7 @@ class SimulationServer:
         model_metadata: RobotURDFMetadataOutput,
         config: ServerConfig,
         key_queue: Queue | None,
+        reset_queue: Queue | None,
     ) -> None:
         self.simulator = MujocoSimulator(
             model_path=model_path,
@@ -100,6 +101,7 @@ class SimulationServer:
         self._save_video = config.save_video
         self._save_logs = config.save_logs
         self._key_queue = key_queue
+        self._reset_queue = reset_queue
         self._dt = config.dt
 
     async def _simulation_loop(self) -> None:
@@ -136,6 +138,9 @@ class SimulationServer:
         try:
             while not self._stop_event.is_set():
                 model_provider.arrays.clear()
+                if self._reset_queue is not None and not self._reset_queue.empty():
+                    await self.simulator.reset()
+                    self._reset_queue.get()
 
                 # Runs the simulation for one step.
                 async with self._step_lock:
@@ -240,10 +245,10 @@ async def serve(config: ServerConfig) -> None:
         )
     )
 
-    key_queue = None
+    key_queue, reset_queue = None, None
     if config.use_keyboard:
         keyboard_listener = KeyboardListener()
-        key_queue = keyboard_listener.get_key_queue()
+        key_queue, reset_queue = keyboard_listener.get_queues()
 
 
     server = SimulationServer(
@@ -251,6 +256,7 @@ async def serve(config: ServerConfig) -> None:
         model_metadata=model_metadata,
         config=config,
         key_queue=key_queue,
+        reset_queue=reset_queue,
     )
 
     await server.start()

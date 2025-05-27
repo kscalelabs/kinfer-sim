@@ -202,7 +202,7 @@ class ModelProvider(ModelProviderABC):
             key = key.strip("'")
 
             # reset commands
-            if key == '0':
+            if key == '0' or key == 'key.backspace':
                 self.command_array *= 0
             
             # lin vel
