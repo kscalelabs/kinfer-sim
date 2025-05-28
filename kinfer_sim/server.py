@@ -127,11 +127,11 @@ class SimulationServer:
                     return
 
                 metadata = metadata_from_json(metadata_file.read().decode("utf-8"))
-                if metadata.num_commands is None:
+                if metadata.num_commands is None:  # type: ignore[attr-defined]
                     logger.warning("Could not validate command dimension: num_commands not specified in model metadata")
                     return
 
-                expected = metadata.num_commands
+                expected = metadata.num_commands  # type: ignore[attr-defined]
                 actual = len(keyboard_state.value)
                 if actual != expected:
                     raise ValueError(
