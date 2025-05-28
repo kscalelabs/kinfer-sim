@@ -180,7 +180,7 @@ class ModelProvider(ModelProviderABC):
             elif input_type == "gyroscope":
                 inputs[input_type] = self.get_gyroscope()
             elif input_type == "command":
-                inputs[input_type] = self.get_command(metadata)
+                inputs[input_type] = self.get_command()
             elif input_type == "time":
                 inputs[input_type] = self.get_time()
             else:
@@ -241,18 +241,8 @@ class ModelProvider(ModelProviderABC):
         self.arrays["time"] = time_array
         return time_array
 
-    def get_command(self, metadata: PyModelMetadata) -> np.ndarray:
-        # Get the expected number of commands from metadata
-        num_commands = metadata.num_commands or 3  # Default to 3 if not specified
-
-        # Take only the first num_commands values from keyboard state
-        command_values = self.keyboard_state.value[:num_commands]
-
-        # Pad with zeros if we don't have enough values
-        while len(command_values) < num_commands:
-            command_values.append(0.0)
-
-        command_array = np.array(command_values, dtype=np.float32)
+    def get_command(self) -> np.ndarray:
+        command_array = np.array(self.keyboard_state.value, dtype=np.float32)
         self.arrays["command"] = command_array
         return command_array
 
