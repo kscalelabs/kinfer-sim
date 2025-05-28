@@ -34,25 +34,39 @@ class RewardPlotter:
         self.values = []
         self.curve = self.plot.plot(pen='y')  # Create persistent curve
         
-        # Start the plotting task
-        self.plot_task = None
+        # Data processing and rendering flags
+        self.data_needs_update = False
+        self.running = True
+        
+        # Start the tasks
+        self.data_task = None
+        self.render_task = None
         self.time_counter = 0
 
     async def start(self):
-        """Start the plotting task"""
-        self.plot_task = asyncio.create_task(self._plot_loop())
+        """Start both the data processing and rendering tasks"""
+        self.running = True
+        self.data_task = asyncio.create_task(self._data_loop())
+        self.render_task = asyncio.create_task(self._render_loop())
+
+    async def stop(self):
+        """Stop all tasks gracefully"""
+        self.running = False
+        if self.data_task:
+            await self.data_task
+        if self.render_task:
+            await self.render_task
 
     async def reset(self):
         """Reset the plot"""
         self.times = []
         self.values = []
         self.time_counter = 0
-        self.curve.setData([], [])
-        self.app.processEvents()
+        self.data_needs_update = True
         
-    async def _plot_loop(self):
-        """Main plotting loop that runs in background"""
-        while True:
+    async def _data_loop(self):
+        """Process incoming data in background"""
+        while self.running:
             try:
                 sim_data = await self.plot_queue.get()
                 
@@ -67,13 +81,27 @@ class RewardPlotter:
                 self.times.append(self.time_counter)
                 self.values.append(processed_data)
                 self.time_counter += 1
+                self.data_needs_update = True
                 
-                # Update plot (PyQt operations must be in main thread)
-                self.curve.setData(self.times, self.values)
-                self.app.processEvents()  # Let Qt handle events
             except Exception as e:
-                print(f"Error in plot loop: {e}")
-            
+                print(f"Error in data loop: {e}")
+                await asyncio.sleep(1)  # Wait a bit longer on error
+    
+    async def _render_loop(self):
+        """Render the plot at a fixed rate"""
+        while self.running:
+            try:
+                if self.data_needs_update:
+                    self.curve.setData(self.times, self.values)
+                    self.data_needs_update = False
+                
+                self.app.processEvents()  # Always process Qt events
+                await asyncio.sleep(1/60)  # Cap at ~60 FPS
+                
+            except Exception as e:
+                print(f"Error in render loop: {e}")
+                await asyncio.sleep(1)
+        
     def _process_data_with_jax(self, sim_data):
         # Heavy Jax preprocessing here
         print("Processing data with Jax")
