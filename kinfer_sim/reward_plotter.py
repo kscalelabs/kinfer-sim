@@ -1,6 +1,7 @@
 import asyncio
 import importlib.util
 from dataclasses import dataclass
+from concurrent.futures import ThreadPoolExecutor
 
 import jax
 import jax.numpy as jnp
@@ -101,6 +102,8 @@ class RewardPlotter:
         self.data_task = None
         self.render_task = None
 
+        self.executor = ThreadPoolExecutor(max_workers=1)
+
     async def start(self):
         """Start both the data processing and rendering tasks"""
         self.running = True
@@ -114,6 +117,7 @@ class RewardPlotter:
             await self.data_task
         if self.render_task:
             await self.render_task
+        self.executor.shutdown(wait=True)
 
     async def reset(self):
         """Reset all plots"""
@@ -135,12 +139,13 @@ class RewardPlotter:
                 print(f"Full traceback:\n{traceback.format_exc()}")
                 await asyncio.sleep(1)
 
-    async def collect_and_organize_data(self):
-        """Fully run down the data queue and create Trajectory object"""
+    def _process_data_sync(self):
+        """Process data from the queue, ran through executor in separate thread to avoid blocking the main thread"""
         new_data = False
-        while self.plot_queue.qsize() > 0:
+        while not self.plot_queue.empty():
             new_data = True
-            mjdata, obs_arrays = await self.plot_queue.get()
+            # Get data from queue synchronously
+            mjdata, obs_arrays = self.plot_queue.get_nowait()
 
             # mjdata
             for key in ['qpos', 'qvel', 'xpos', 'xquat']:
@@ -168,8 +173,8 @@ class RewardPlotter:
             self.traj_data['obs']['sensor_observation_base_site_linvel'].append(mjdata['base_site_linvel'])
             # self.traj_data['obs']['feet_contact_observation'].append(train_obs_arrays['FeetContactObservation'])
 
-        if 'qpos' not in self.traj_data: # quit if we don't have any data
-            return
+        if not new_data:
+            return False
 
         traj = Trajectory(
             qpos=jnp.stack(self.traj_data['qpos']),
@@ -194,16 +199,17 @@ class RewardPlotter:
                 import traceback
                 print(f"Full traceback:\n{traceback.format_exc()}")
                 print(f"Error computing reward for {reward.__class__.__name__}: {e}")
-        
-        # Process additional metrics
-        # self.data['values']['commands'] = 0.0 #float(jnp.mean(traj_data.command['desired_speed']))
-        # self.data['values']['linvel'] = float(jnp.mean(mjdata['qvel'][:3]))
-        # self.data['values']['angvel'] = float(jnp.mean(mjdata['qvel'][3:6]))
 
-        if new_data:
-            self.data_needs_update = True
-        
-    
+        self.data_needs_update = True
+        return True
+
+    async def collect_and_organize_data(self):
+        """Run the entire data processing in an executor"""
+        await asyncio.get_event_loop().run_in_executor(
+            self.executor,
+            self._process_data_sync
+        )
+
     async def _render_loop(self):
         """Render all plots at a fixed rate"""
         while self.running:
@@ -240,7 +246,6 @@ class RewardPlotter:
         }
         obs_arrays_copy = {k: np.array(v, copy=True) for k, v in obs_arrays.items()}
         await self.plot_queue.put((mjdata_copy, obs_arrays_copy))
-
 
 
 
