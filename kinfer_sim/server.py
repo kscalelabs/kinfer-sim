@@ -72,6 +72,7 @@ class SimulationServer:
         config: ServerConfig,
         key_queue: Queue | None,
         reset_queue: Queue | None,
+        pause_queue: Queue | None,
     ) -> None:
         self.simulator = MujocoSimulator(
             model_path=model_path,
@@ -103,7 +104,18 @@ class SimulationServer:
         self._save_logs = config.save_logs
         self._key_queue = key_queue
         self._reset_queue = reset_queue
+        self._pause_queue = pause_queue
         self._dt = config.dt
+
+    async def _handle_pause(self) -> None:
+        """Handle pause state changes from the pause queue."""
+        if self._pause_queue is not None and not self._pause_queue.empty():
+            self._pause_queue.get()  # Clear the queue
+            logger.info("Simulation PAUSED")
+            while self._pause_queue.empty():
+                await asyncio.sleep(0.1)
+            self._pause_queue.get()  # Clear the queue
+            logger.info("Simulation RESUMED")
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
@@ -141,6 +153,8 @@ class SimulationServer:
 
         try:
             while not self._stop_event.is_set():
+                await self._handle_pause()
+
                 model_provider.arrays.clear()
                 if self._reset_queue is not None and not self._reset_queue.empty():
                     await self.simulator.reset()
@@ -151,7 +165,9 @@ class SimulationServer:
                 async with self._step_lock:
                     for _ in range(self.simulator._sim_decimation):
                         await self.simulator.step()
-                        await reward_plotter.add_data(self.simulator._data)
+
+                # add last mjdata to plotter
+                await reward_plotter.add_data(self.simulator._data)
 
                 # Offload blocking calls to the executor
                 output, carry = await loop.run_in_executor(None, model_runner.step, carry)
@@ -251,10 +267,10 @@ async def serve(config: ServerConfig) -> None:
         )
     )
 
-    key_queue, reset_queue = None, None
+    key_queue, reset_queue, pause_queue = None, None, None
     if config.use_keyboard:
         keyboard_listener = KeyboardListener()
-        key_queue, reset_queue = keyboard_listener.get_queues()
+        key_queue, reset_queue, pause_queue = keyboard_listener.get_queues()
 
 
     server = SimulationServer(
@@ -263,6 +279,7 @@ async def serve(config: ServerConfig) -> None:
         config=config,
         key_queue=key_queue,
         reset_queue=reset_queue,
+        pause_queue=pause_queue,
     )
 
     await server.start()

@@ -54,7 +54,6 @@ class RewardPlotter:
         """Main plotting loop that runs in background"""
         while True:
             try:
-                # Get data from queue
                 sim_data = await self.plot_queue.get()
                 
                 # Do Jax preprocessing in executor to not block
