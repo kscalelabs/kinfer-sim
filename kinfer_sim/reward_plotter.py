@@ -86,6 +86,7 @@ class RewardPlotter:
             self.plots[metric].setXLink(first_plot)  # Link x-axis to first plot
             self.plots[metric].setLabel('left', metric.capitalize())
             self.plots[metric].setLabel('bottom', 'Time')
+            self.plots[metric].addLegend()
             
             if metric == 'linvel':
                 self.curves[metric] = {
@@ -94,19 +95,16 @@ class RewardPlotter:
                     'y_cmd': self.plots[metric].plot(pen=pg.mkPen('g', width=2, style=pg.QtCore.Qt.DashLine), name='Y Command'),
                     'y_real': self.plots[metric].plot(pen=pg.mkPen('g', width=2), name='Y Actual')
                 }
-                self.plots[metric].addLegend()
             elif metric == 'angvel':
                 self.curves[metric] = {
                     'wz_cmd': self.plots[metric].plot(pen=pg.mkPen('y', width=2, style=pg.QtCore.Qt.DashLine), name='ωz Command'),
                     # 'wz_real': self.plots[metric].plot(pen=pg.mkPen('y', width=2), name='ωz Actual')
                 }
-                self.plots[metric].addLegend()
             elif metric == 'base_height':
                 self.curves[metric] = {
                     'base_height_cmd': self.plots[metric].plot(pen=pg.mkPen('b', width=2, style=pg.QtCore.Qt.DashLine), name='Height Command'),
                     'base_height_real': self.plots[metric].plot(pen=pg.mkPen('b', width=2), name='Height Actual')
                 }
-                self.plots[metric].addLegend()
             elif metric == 'xyorientation':
                 self.curves[metric] = {
                     'pitch_cmd': self.plots[metric].plot(pen=pg.mkPen('m', width=2, style=pg.QtCore.Qt.DashLine), name='Pitch Command'),
@@ -114,7 +112,6 @@ class RewardPlotter:
                     'roll_cmd': self.plots[metric].plot(pen=pg.mkPen('c', width=2, style=pg.QtCore.Qt.DashLine), name='Roll Command'),
                     # 'roll_real': self.plots[metric].plot(pen=pg.mkPen('c', width=2), name='Roll Actual')
                 }
-                self.plots[metric].addLegend()
             else:
                 self.curves[metric] = self.plots[metric].plot(pen='g')
             self.win.nextRow()
