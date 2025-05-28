@@ -138,7 +138,7 @@ class SimulationServer:
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
 
-        reward_plotter = RewardPlotter()
+        reward_plotter = RewardPlotter(mujoco_model=self.simulator._model)
         await reward_plotter.start()
 
         loop = asyncio.get_running_loop()
@@ -174,12 +174,15 @@ class SimulationServer:
                         for _ in range(self.simulator._sim_decimation):
                             await self.simulator.step()
 
-                    # add last mjdata to plotter
-                    await reward_plotter.add_data(self.simulator._data)
-
                     # Offload blocking calls to the executor
                     output, carry = await loop.run_in_executor(None, model_runner.step, carry)
                     await loop.run_in_executor(None, model_runner.take_action, output)
+
+                    # add last mjdata to plotter
+                    await reward_plotter.add_data(
+                        mjdata=self.simulator._data,
+                        obs_arrays=model_provider.arrays.copy(),
+                    )
 
                     if frames is not None:
                         frames.append(self.simulator.read_pixels())
