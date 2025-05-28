@@ -3,6 +3,7 @@
 import asyncio
 import itertools
 import logging
+import tarfile
 import time
 import traceback
 from pathlib import Path
@@ -12,7 +13,7 @@ import colorlogging
 import numpy as np
 import typed_argparse as tap
 from askin import KeyboardController
-from kinfer.rust_bindings import PyModelRunner
+from kinfer.rust_bindings import PyModelRunner, metadata_from_json
 from kscale import K
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
@@ -116,6 +117,30 @@ class SimulationServer:
 
             fps = round(self.simulator._control_frequency)
             self._video_writer = VideoWriter(self._save_path / "video.mp4", fps=fps)
+
+        # Check command dimension matches model expectations
+        try:
+            with tarfile.open(self._kinfer_path, "r:gz") as tar:
+                metadata_file = tar.extractfile("metadata.json")
+                if metadata_file is None:
+                    logger.warning("Could not validate command dimension: metadata.json not found in kinfer file")
+                    return
+
+                metadata = metadata_from_json(metadata_file.read().decode("utf-8"))
+                if metadata.num_commands is None:
+                    logger.warning("Could not validate command dimension: num_commands not specified in model metadata")
+                    return
+
+                expected = metadata.num_commands
+                actual = len(keyboard_state.value)
+                if actual != expected:
+                    raise ValueError(
+                        f"Command dimension mismatch: {type(keyboard_state).__name__} provides command"
+                        f"with dim {actual} but model expects command with dim {expected}"
+                    )
+
+        except (tarfile.TarError, FileNotFoundError):
+            logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
