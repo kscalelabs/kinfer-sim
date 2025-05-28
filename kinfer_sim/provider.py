@@ -156,7 +156,7 @@ class ModelProvider(ModelProviderABC):
         self.keyboard_state = keyboard_state
         return self
 
-    def get_inputs(self, input_types: list[str], metadata: PyModelMetadata) -> dict[str, np.ndarray]:
+    def get_inputs(self, input_types: Sequence[str], metadata: PyModelMetadata) -> dict[str, np.ndarray]:
         """Get inputs for the model based on the requested input types.
 
         Args:
