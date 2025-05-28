@@ -62,31 +62,32 @@ class RewardPlotter:
         self.traj_data = {}
         self.plots = {}
         self.curves = {}
-        self.data = {
-            'times': {},
-            'values': {}
-        }
+        self.plot_data = {}
         
         # Setup reward plots
+        first_plot = None
         for i, reward in enumerate(self.rewards):
             name = reward.__class__.__name__
             self.plots[name] = self.win.addPlot(title=name)
+            if first_plot is None:
+                first_plot = self.plots[name]
+            else:
+                self.plots[name].setXLink(first_plot)  # Link x-axis to first plot
             self.plots[name].setLabel('left', 'Reward')
             self.plots[name].setLabel('bottom', 'Time')
             self.curves[name] = self.plots[name].plot(pen='y')
-            self.data['times'][name] = []
-            self.data['values'][name] = []
+            self.plot_data[name] = []
             self.win.nextRow()
             
         # Setup additional metric plots
         additional_metrics = ['commands', 'linvel', 'angvel']
         for metric in additional_metrics:
             self.plots[metric] = self.win.addPlot(title=metric.capitalize())
+            self.plots[metric].setXLink(first_plot)  # Link x-axis to first plot
             self.plots[metric].setLabel('left', metric.capitalize())
             self.plots[metric].setLabel('bottom', 'Time')
             self.curves[metric] = self.plots[metric].plot(pen='g')
-            self.data['times'][metric] = []
-            self.data['values'][metric] = []
+            self.plot_data[metric] = []
             self.win.nextRow()
             
         self.win.show()
@@ -121,9 +122,8 @@ class RewardPlotter:
 
     async def reset(self):
         """Reset all plots"""
-        for name in self.data['times'].keys():
-            self.data['times'][name] = []
-            self.data['values'][name] = []
+        for name in self.plot_data.keys():
+            self.plot_data[name] = []
         self.traj_data = {}
         self.data_needs_update = True
         
@@ -181,20 +181,15 @@ class RewardPlotter:
             qvel=jnp.stack(self.traj_data['qvel']),
             xpos=jnp.stack(self.traj_data['xpos']),
             xquat=jnp.stack(self.traj_data['xquat']),
-            command={
-                k: jnp.stack(v) for k, v in self.traj_data['command'].items()
-            },
-            obs={
-                k: jnp.stack(v) for k, v in self.traj_data['obs'].items()
-            },
+            command={k: jnp.stack(v) for k, v in self.traj_data['command'].items()},
+            obs={k: jnp.stack(v) for k, v in self.traj_data['obs'].items()},
         )
 
         for reward in self.rewards:
             try:
                 name = reward.__class__.__name__
                 reward_values = reward.get_reward(traj)
-                self.data['values'][name] = [float(x) for x in reward_values.flatten()]
-                self.data['times'][name] = [i for i in range(len(reward_values))]
+                self.plot_data[name] = [float(x) for x in reward_values.flatten()]
             except Exception as e:
                 import traceback
                 print(f"Full traceback:\n{traceback.format_exc()}")
@@ -216,10 +211,9 @@ class RewardPlotter:
             try:
                 if self.data_needs_update:
                     for name in self.curves.keys():
-                        self.curves[name].setData(
-                            self.data['times'][name], 
-                            self.data['values'][name]
-                        )
+                        values = self.plot_data[name]
+                        x = list(range(len(values)))
+                        self.curves[name].setData(x, values)
                     self.data_needs_update = False
                 
                 self.app.processEvents()
