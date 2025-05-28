@@ -106,16 +106,18 @@ class SimulationServer:
         self._reset_queue = reset_queue
         self._pause_queue = pause_queue
         self._dt = config.dt
+        self._is_paused = False  # New flag to track pause state
 
     async def _handle_pause(self) -> None:
         """Handle pause state changes from the pause queue."""
         if self._pause_queue is not None and not self._pause_queue.empty():
-            self._pause_queue.get()  # Clear the queue
-            logger.info("Simulation PAUSED")
-            while self._pause_queue.empty():
-                await asyncio.sleep(0.1)
-            self._pause_queue.get()  # Clear the queue
-            logger.info("Simulation RESUMED")
+            action = self._pause_queue.get()
+            if not self._is_paused:  # Pause
+                self._is_paused = True
+                logger.info("Simulation PAUSED")
+            else:  # Resume
+                self._is_paused = False
+                logger.info("Simulation RESUMED")
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
@@ -155,42 +157,40 @@ class SimulationServer:
             while not self._stop_event.is_set():
                 await self._handle_pause()
 
-                model_provider.arrays.clear()
-                if self._reset_queue is not None and not self._reset_queue.empty():
-                    await self.simulator.reset()
-                    await reward_plotter.reset()
-                    self._reset_queue.get()
+                # Always render and update UI even when paused
+                self.simulator.render()
+                num_renders += 1
 
-                # Runs the simulation for one step.
-                async with self._step_lock:
-                    for _ in range(self.simulator._sim_decimation):
-                        await self.simulator.step()
+                # Only simulate if not paused
+                if not self._is_paused:
+                    model_provider.arrays.clear()
+                    if self._reset_queue is not None and not self._reset_queue.empty():
+                        await self.simulator.reset()
+                        await reward_plotter.reset()
+                        self._reset_queue.get()
 
-                # add last mjdata to plotter
-                await reward_plotter.add_data(self.simulator._data)
+                    # Runs the simulation for one step.
+                    async with self._step_lock:
+                        for _ in range(self.simulator._sim_decimation):
+                            await self.simulator.step()
 
-                # Offload blocking calls to the executor
-                output, carry = await loop.run_in_executor(None, model_runner.step, carry)
-                await loop.run_in_executor(None, model_runner.take_action, output)
+                    # add last mjdata to plotter
+                    await reward_plotter.add_data(self.simulator._data)
 
-                if num_steps % self._render_decimation == 0:
-                    self.simulator.render()
-                    num_renders += 1
+                    # Offload blocking calls to the executor
+                    output, carry = await loop.run_in_executor(None, model_runner.step, carry)
+                    await loop.run_in_executor(None, model_runner.take_action, output)
 
-                if frames is not None:
-                    frames.append(self.simulator.read_pixels())
+                    if frames is not None:
+                        frames.append(self.simulator.read_pixels())
 
-                if logs is not None:
-                    logs.append(model_provider.arrays.copy())
+                    if logs is not None:
+                        logs.append(model_provider.arrays.copy())
 
-                # Sleep until the next control update, to avoid rendering
-                # faster than real-time.
-                current_time = time.time()
-                if current_time < self.simulator._sim_time:
-                    await asyncio.sleep(self.simulator._sim_time - current_time)
-                num_steps += 1
+                    num_steps += 1
 
                 # Calculate and log FPS
+                current_time = time.time()
                 if current_time - last_fps_time >= fps_update_interval:
                     fps = num_steps / (current_time - last_fps_time)
                     render_fps = num_renders / (current_time - last_fps_time)
@@ -203,6 +203,16 @@ class SimulationServer:
                     num_steps = 0
                     num_renders = 0
                     last_fps_time = current_time
+
+                # Sleep to maintain real-time simulation
+                if not self._is_paused:
+                    current_time = time.time()
+                    if current_time < self.simulator._sim_time:
+                        await asyncio.sleep(self.simulator._sim_time - current_time)
+
+                # Small sleep to prevent UI blocking when paused
+                else:
+                    await asyncio.sleep(0.01)
 
         except Exception as e:
             logger.error("Simulation loop failed: %s", e)
