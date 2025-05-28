@@ -78,16 +78,45 @@ class RewardPlotter:
             self.curves[name] = self.plots[name].plot(pen='y')
             self.plot_data[name] = []
             self.win.nextRow()
-            
-        # Setup additional metric plots
-        additional_metrics = ['commands', 'linvel', 'angvel']
+
+        # command plots
+        additional_metrics = ['linvel', 'angvel', 'base_height', 'xyorientation']
         for metric in additional_metrics:
             self.plots[metric] = self.win.addPlot(title=metric.capitalize())
             self.plots[metric].setXLink(first_plot)  # Link x-axis to first plot
             self.plots[metric].setLabel('left', metric.capitalize())
             self.plots[metric].setLabel('bottom', 'Time')
-            self.curves[metric] = self.plots[metric].plot(pen='g')
-            self.plot_data[metric] = []
+            
+            if metric == 'linvel':
+                self.curves[metric] = {
+                    'x_cmd': self.plots[metric].plot(pen=pg.mkPen('r', width=2, style=pg.QtCore.Qt.DashLine), name='X Command'),
+                    'x_real': self.plots[metric].plot(pen=pg.mkPen('r', width=2), name='X Actual'),
+                    'y_cmd': self.plots[metric].plot(pen=pg.mkPen('g', width=2, style=pg.QtCore.Qt.DashLine), name='Y Command'),
+                    'y_real': self.plots[metric].plot(pen=pg.mkPen('g', width=2), name='Y Actual')
+                }
+                self.plots[metric].addLegend()
+            elif metric == 'angvel':
+                self.curves[metric] = {
+                    'wz_cmd': self.plots[metric].plot(pen=pg.mkPen('y', width=2, style=pg.QtCore.Qt.DashLine), name='ωz Command'),
+                    # 'wz_real': self.plots[metric].plot(pen=pg.mkPen('y', width=2), name='ωz Actual')
+                }
+                self.plots[metric].addLegend()
+            elif metric == 'base_height':
+                self.curves[metric] = {
+                    'base_height_cmd': self.plots[metric].plot(pen=pg.mkPen('b', width=2, style=pg.QtCore.Qt.DashLine), name='Height Command'),
+                    'base_height_real': self.plots[metric].plot(pen=pg.mkPen('b', width=2), name='Height Actual')
+                }
+                self.plots[metric].addLegend()
+            elif metric == 'xyorientation':
+                self.curves[metric] = {
+                    'pitch_cmd': self.plots[metric].plot(pen=pg.mkPen('m', width=2, style=pg.QtCore.Qt.DashLine), name='Pitch Command'),
+                    # 'pitch_real': self.plots[metric].plot(pen=pg.mkPen('m', width=2), name='Pitch Actual'),
+                    'roll_cmd': self.plots[metric].plot(pen=pg.mkPen('c', width=2, style=pg.QtCore.Qt.DashLine), name='Roll Command'),
+                    # 'roll_real': self.plots[metric].plot(pen=pg.mkPen('c', width=2), name='Roll Actual')
+                }
+                self.plots[metric].addLegend()
+            else:
+                self.curves[metric] = self.plots[metric].plot(pen='g')
             self.win.nextRow()
             
         self.win.show()
@@ -162,7 +191,7 @@ class RewardPlotter:
             self.traj_data['command']['linear_velocity_command'].append(obs_arrays['command'][0:2])
             self.traj_data['command']['angular_velocity_command'].append(obs_arrays['command'][2:8])
             self.traj_data['command']['base_height_command'].append(obs_arrays['command'][8])
-            self.traj_data['command']['xyorientation_command'].append(obs_arrays['command'][9:10])
+            self.traj_data['command']['xyorientation_command'].append(obs_arrays['command'][9:11])
 
             # some obs
             if not 'obs' in self.traj_data:
@@ -195,6 +224,27 @@ class RewardPlotter:
                 print(f"Full traceback:\n{traceback.format_exc()}")
                 print(f"Error computing reward for {reward.__class__.__name__}: {e}")
 
+        self.plot_data['linvel'] = {
+            'x_cmd': [float(x[0]) for x in self.traj_data['command']['linear_velocity_command']],
+            'x_real': [float(x[0]) for x in self.traj_data['obs']['sensor_observation_base_site_linvel']],
+            'y_cmd': [float(x[1]) for x in self.traj_data['command']['linear_velocity_command']],
+            'y_real': [float(x[1]) for x in self.traj_data['obs']['sensor_observation_base_site_linvel']]
+        }
+        self.plot_data['angvel'] = {
+            'wz_cmd': [float(x[0]) for x in self.traj_data['command']['angular_velocity_command']],
+            # 'wz_real': [float(x[0]) for x in self.traj_data['obs']['sensor_observation_base_site_angvel']]
+        }
+        self.plot_data['base_height'] = {
+            'base_height_cmd': [float(x) for x in self.traj_data['command']['base_height_command']],
+            'base_height_real': [float(x[1, 2]) for x in self.traj_data['xpos']]
+        }
+        self.plot_data['xyorientation'] = {
+            'pitch_cmd': [float(x[0]) for x in self.traj_data['command']['xyorientation_command']],
+            # 'pitch_real': [float(x[0]) for x in self.traj_data['xquat'][:, 0]],
+            'roll_cmd': [float(x[1]) for x in self.traj_data['command']['xyorientation_command']],
+            # 'roll_real': [float(x[1]) for x in self.traj_data['xquat'][:, 1]]
+        }
+
         self.data_needs_update = True
         return True
 
@@ -210,10 +260,18 @@ class RewardPlotter:
         while self.running:
             try:
                 if self.data_needs_update:
-                    for name in self.curves.keys():
-                        values = self.plot_data[name]
-                        x = list(range(len(values)))
-                        self.curves[name].setData(x, values)
+                    for name, curves in self.curves.items():
+                        if isinstance(curves, dict):
+                            # Multiple curves per plot
+                            for curve_name, curve in curves.items():
+                                values = self.plot_data[name][curve_name]
+                                x = list(range(len(values)))
+                                curve.setData(x, values)
+                        else:
+                            # Single curve
+                            values = self.plot_data[name]
+                            x = list(range(len(values)))
+                            curves.setData(x, values)
                     self.data_needs_update = False
                 
                 self.app.processEvents()
