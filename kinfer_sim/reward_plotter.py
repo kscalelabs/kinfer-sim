@@ -202,10 +202,18 @@ class RewardPlotter:
             if not 'obs' in self.traj_data:
                 self.traj_data['obs'] = {
                     'sensor_observation_base_site_linvel': [],
-                    # 'feet_contact_observation': []
+                    'sensor_observation_left_foot_force': [],
+                    'sensor_observation_right_foot_force': [],
+                    'feet_contact_observation': []
                 }
             self.traj_data['obs']['sensor_observation_base_site_linvel'].append(mjdata['base_site_linvel'])
-            # self.traj_data['obs']['feet_contact_observation'].append(train_obs_arrays['FeetContactObservation'])
+            self.traj_data['obs']['sensor_observation_left_foot_force'].append(mjdata['left_foot_force'])
+            self.traj_data['obs']['sensor_observation_right_foot_force'].append(mjdata['right_foot_force'])
+
+            # feet contact obs # TODO should really be done in parallel
+            observation_input = self.get_sparse_obs_input(mjdata['contact']['geom'], mjdata['contact']['dist'])
+            feet_contact_obs = self.observations['FeetContactObservation'].observe(observation_input, None, None)
+            self.traj_data['obs']['feet_contact_observation'].append(feet_contact_obs)
 
         if not new_data:
             return False
@@ -308,29 +316,44 @@ class RewardPlotter:
             'left_foot_force': np.array(mjdata.sensor('left_foot_force').data, copy=True),
             'right_foot_force': np.array(mjdata.sensor('right_foot_force').data, copy=True),
             'heading': np.array([heading]),
+            'contact': {
+                'geom': np.array(mjdata.contact.geom, copy=True),
+                'dist': np.array(mjdata.contact.dist, copy=True)
+            }
         }
         obs_arrays_copy = {k: np.array(v, copy=True) for k, v in obs_arrays.items()}
         await self.plot_queue.put((mjdata_copy, obs_arrays_copy))
 
+    @staticmethod
+    def get_sparse_obs_input(geom: np.ndarray, dist: np.ndarray):
+        """
+        Create a minimal mock structure for contact data to call the observe function
+        """
+        class MinimalContact:
+            def __init__(self, geom, dist):
+                self.geom = geom
+                self.dist = dist
 
+        class MinimalMjData:
+            def __init__(self, geom, dist):
+                self.contact = MinimalContact(
+                    geom,
+                    dist
+                )
 
-        # # HACK
-        # @dataclass(frozen=True)
-        # class ObservationInput:
-        #     physics_state: mujoco.MjData
+        class MinimalPhysicsState:
+            def __init__(self, data):
+                self.data = data
 
-        # @dataclass(frozen=True)
-        # class PhysicsState:
-        #     data: mujoco.MjData
+        class MinimalObservationInput:
+            def __init__(self, physics_state):
+                self.physics_state = physics_state
 
+        # Create the minimal observation input with just the contact data
+        minimal_mjdata = MinimalMjData(geom, dist)
+        minimal_physics_state = MinimalPhysicsState(minimal_mjdata)
+        minimal_observation_input = MinimalObservationInput(minimal_physics_state)
 
-        # observation_input = ObservationInput(
-        #     physics_state=PhysicsState(data=mjdata)
-        # )
-
-        # feetcontactobs = self.observations['FeetContactObservation'].observe(observation_input, None, None)
-        # train_obs_arrays = {'FeetContactObservation': feetcontactobs}
-
-
+        return minimal_observation_input
 
 
