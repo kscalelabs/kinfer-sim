@@ -75,6 +75,7 @@ class RewardPlotter:
                 self.plots[name].setXLink(first_plot)  # Link x-axis to first plot
             self.plots[name].setLabel('left', 'Reward')
             self.plots[name].setLabel('bottom', 'Time')
+            self.plots[name].showGrid(x=True, y=True, alpha=0.3)
             self.curves[name] = self.plots[name].plot(pen='y')
             self.plot_data[name] = []
             self.win.nextRow()
@@ -87,6 +88,7 @@ class RewardPlotter:
             self.plots[metric].setLabel('left', metric.capitalize())
             self.plots[metric].setLabel('bottom', 'Time')
             self.plots[metric].addLegend()
+            self.plots[metric].showGrid(x=True, y=True, alpha=0.3)
             
             if metric == 'linvel':
                 self.curves[metric] = {
@@ -99,6 +101,8 @@ class RewardPlotter:
                 self.curves[metric] = {
                     'wz_cmd': self.plots[metric].plot(pen=pg.mkPen('y', width=2, style=pg.QtCore.Qt.DashLine), name='ωz Command'),
                     # 'wz_real': self.plots[metric].plot(pen=pg.mkPen('y', width=2), name='ωz Actual')
+                    'heading_cmd': self.plots[metric].plot(pen=pg.mkPen('y', width=2), name='Heading'),
+                    # 'heading_real': self.plots[metric].plot(pen=pg.mkPen('y', width=2), name='Heading Actual')
                 }
             elif metric == 'base_height':
                 self.curves[metric] = {
@@ -174,7 +178,7 @@ class RewardPlotter:
             mjdata, obs_arrays = self.plot_queue.get_nowait()
 
             # mjdata
-            for key in ['qpos', 'qvel', 'xpos', 'xquat']:
+            for key in ['qpos', 'qvel', 'xpos', 'xquat', 'heading']:
                 self.traj_data.setdefault(key, []).append(mjdata[key])
 
             # commands
@@ -186,8 +190,10 @@ class RewardPlotter:
                     'xyorientation_command': []
                 }
             self.traj_data['command']['linear_velocity_command'].append(obs_arrays['command'][0:2])
-            self.traj_data['command']['angular_velocity_command'].append(obs_arrays['command'][2:8])
-            self.traj_data['command']['base_height_command'].append(obs_arrays['command'][8])
+            ang_vel_cmd = obs_arrays['command'][2:8]
+            ang_vel_cmd[-1] = mjdata['heading'][0]
+            self.traj_data['command']['angular_velocity_command'].append(ang_vel_cmd)
+            self.traj_data['command']['base_height_command'].append(obs_arrays['command'][8:9])
             self.traj_data['command']['xyorientation_command'].append(obs_arrays['command'][9:11])
 
             # some obs
@@ -230,6 +236,8 @@ class RewardPlotter:
         self.plot_data['angvel'] = {
             'wz_cmd': [float(x[0]) for x in self.traj_data['command']['angular_velocity_command']],
             # 'wz_real': [float(x[0]) for x in self.traj_data['obs']['sensor_observation_base_site_angvel']]
+            'heading_cmd': [float(x[-1]) for x in self.traj_data['command']['angular_velocity_command']],
+            # 'heading_real': [float(x[0]) for x in self.traj_data['heading']]
         }
         self.plot_data['base_height'] = {
             'base_height_cmd': [float(x) for x in self.traj_data['command']['base_height_command']],
@@ -281,7 +289,7 @@ class RewardPlotter:
                 await asyncio.sleep(1)
 
         
-    async def add_data(self, mjdata, obs_arrays):
+    async def add_data(self, mjdata, obs_arrays, heading):
         """Copy simulation data to be plotted asynchronously"""
         mjdata_copy = {
             'qpos': np.array(mjdata.qpos, copy=True),
@@ -292,6 +300,7 @@ class RewardPlotter:
             'base_site_linvel': np.array(mjdata.sensor('base_site_linvel').data, copy=True),
             'left_foot_force': np.array(mjdata.sensor('left_foot_force').data, copy=True),
             'right_foot_force': np.array(mjdata.sensor('right_foot_force').data, copy=True),
+            'heading': np.array([heading]),
         }
         obs_arrays_copy = {k: np.array(v, copy=True) for k, v in obs_arrays.items()}
         await self.plot_queue.put((mjdata_copy, obs_arrays_copy))

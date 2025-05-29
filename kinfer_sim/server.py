@@ -105,8 +105,7 @@ class SimulationServer:
         self._key_queue = key_queue
         self._reset_queue = reset_queue
         self._pause_queue = pause_queue
-        self._dt = config.dt
-        self._is_paused = False  # New flag to track pause state
+        self._is_paused = False
 
     async def _handle_pause(self) -> None:
         """Handle pause state changes from the pause queue."""
@@ -134,7 +133,6 @@ class SimulationServer:
             acc_name=self._acc_name,
             gyro_name=self._gyro_name,
             key_queue=self._key_queue,
-            dt=self._dt,
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
 
@@ -182,6 +180,7 @@ class SimulationServer:
                     await reward_plotter.add_data(
                         mjdata=self.simulator._data,
                         obs_arrays=model_provider.arrays.copy(),
+                        heading=model_provider.heading,
                     )
 
                     if frames is not None:

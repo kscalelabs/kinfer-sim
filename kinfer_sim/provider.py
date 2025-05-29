@@ -169,13 +169,11 @@ class ModelProvider(ModelProviderABC):
     gyro_name: str
     arrays: dict[str, np.ndarray]
     key_queue: Queue | None
-    dt: float
 
     def __new__(
         cls,
         simulator: MujocoSimulator,
         key_queue: Queue | None,
-        dt: float,
         quat_name: str = "imu_site_quat",
         acc_name: str = "imu_acc",
         gyro_name: str = "imu_gyro",
@@ -187,7 +185,7 @@ class ModelProvider(ModelProviderABC):
         self.gyro_name = gyro_name
         self.arrays = {}
         self.key_queue = key_queue
-        self.dt = dt
+        self.heading = 0.0
         return self
     
     def process_key_queue(self):
@@ -281,17 +279,15 @@ class ModelProvider(ModelProviderABC):
             self.process_key_queue()
             logging.info(f"command array: [{', '.join(f'{x:.2f}' for x in self.command_array)}]")
 
-        self.heading += self.command_array[2] * self.dt
-
-        quat = self.simulator._data.xquat[1]
-
+        self.heading += self.command_array[2] * self.simulator._control_dt
         inv_heading_quat = euler_to_quat(np.array([0, 0, -self.heading]))
+        quat = self.simulator._data.xquat[1]
         quat = rotate_quat(quat, inv_heading_quat)
 
         command_obs = np.concatenate([
             self.command_array[:3],
             quat, # TODO HACK obs - need heading on real robot
-            0.0*np.array([self.heading]), # TODO i dont want to feed this to model but training code has it
+            np.zeros_like([self.heading]), # TODO i dont want to feed a useless 0 to model but training code has it
             self.command_array[3:],
         ])
 
