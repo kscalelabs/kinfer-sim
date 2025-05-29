@@ -36,6 +36,7 @@ class ServerConfig(tap.TypedArgs):
 
     # Physics settings
     dt: float = tap.arg(default=0.0001, help="Simulation timestep")
+    pd_update_frequency: float = tap.arg(default=1000.0, help="PD update frequency for the actuators (Hz)")
     no_gravity: bool = tap.arg(default=False, help="Enable gravity")
     start_height: float = tap.arg(default=1.1, help="Start height")
     quat_name: str = tap.arg(default="imu_site_quat", help="Name of the quaternion sensor")
@@ -94,6 +95,7 @@ class SimulationServer:
             accelerometer_noise=config.accelerometer_noise,
             gyroscope_noise=config.gyroscope_noise,
             projected_gravity_noise=config.projected_gravity_noise,
+            pd_update_frequency=config.pd_update_frequency,
             mujoco_scene=config.mujoco_scene,
             camera=config.camera,
             frame_width=config.frame_width,
