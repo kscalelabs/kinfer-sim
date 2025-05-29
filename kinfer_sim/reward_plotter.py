@@ -10,6 +10,8 @@ import pyqtgraph as pg
 import numpy as np
 import mujoco
 
+import xax
+
 
 @jax.tree_util.register_dataclass
 @dataclass(frozen=True)
@@ -227,11 +229,16 @@ class RewardPlotter:
                 print(f"Full traceback:\n{traceback.format_exc()}")
                 print(f"Error computing reward for {reward.__class__.__name__}: {e}")
 
+        base_eulers = xax.quat_to_euler(traj.xquat[:, 1, :])
+        base_eulers = base_eulers.at[:, :2].set(0.0)
+        heading_quats = xax.euler_to_quat(base_eulers)
+        local_frame_linvel = xax.rotate_vector_by_quat(traj.obs['sensor_observation_base_site_linvel'], heading_quats, inverse=True)
+
         self.plot_data['linvel'] = {
             'x_cmd': [float(x[0]) for x in self.traj_data['command']['linear_velocity_command']],
-            'x_real': [float(x[0]) for x in self.traj_data['obs']['sensor_observation_base_site_linvel']],
+            'x_real': [float(x[0]) for x in local_frame_linvel],
             'y_cmd': [float(x[1]) for x in self.traj_data['command']['linear_velocity_command']],
-            'y_real': [float(x[1]) for x in self.traj_data['obs']['sensor_observation_base_site_linvel']]
+            'y_real': [float(x[1]) for x in local_frame_linvel]
         }
         self.plot_data['angvel'] = {
             'wz_cmd': [float(x[0]) for x in self.traj_data['command']['angular_velocity_command']],
