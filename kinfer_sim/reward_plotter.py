@@ -238,7 +238,7 @@ class RewardPlotter:
             xquat=jnp.stack(self.traj_data['xquat']),
             command={k: jnp.stack(v) for k, v in self.traj_data['command'].items()},
             obs={k: jnp.stack(v) for k, v in self.traj_data['obs'].items()},
-            done=jnp.zeros((len(self.traj_data['qpos']), 1), dtype=jnp.bool_)
+            done=jnp.zeros((len(self.traj_data['qpos']),), dtype=jnp.bool_)
         )
 
         for reward in self.rewards:
