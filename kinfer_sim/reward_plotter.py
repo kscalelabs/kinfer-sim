@@ -27,7 +27,7 @@ class Trajectory:
     command: dict[str, Array]
     # event_state: xax.FrozenDict[str, Array]
     # action: Array
-    # done: Array
+    done: Array
     # success: Array
     # timestep: Array
     # termination_components: xax.FrozenDict[str, Array]
@@ -83,7 +83,7 @@ class RewardPlotter:
             self.win.nextRow()
 
         # command plots
-        additional_metrics = ['linvel', 'angvel', 'base_height', 'xyorientation']
+        additional_metrics = ['feet_contact_observation', 'linvel', 'angvel', 'base_height', 'xyorientation']
         for metric in additional_metrics:
             self.plots[metric] = self.win.addPlot(title=metric.capitalize())
             self.plots[metric].setXLink(first_plot)  # Link x-axis to first plot
@@ -91,8 +91,13 @@ class RewardPlotter:
             self.plots[metric].setLabel('bottom', 'Time')
             self.plots[metric].addLegend()
             self.plots[metric].showGrid(x=True, y=True, alpha=0.3)
-            
-            if metric == 'linvel':
+
+            if metric == 'feet_contact_observation':
+                self.curves[metric] = {
+                    'left_foot_contact': self.plots[metric].plot(pen=pg.mkPen('r', width=2, style=pg.QtCore.Qt.DashLine), name='Left Foot Contact'),
+                    'right_foot_contact': self.plots[metric].plot(pen=pg.mkPen('g', width=2, style=pg.QtCore.Qt.DashLine), name='Right Foot Contact')
+                }
+            elif metric == 'linvel':
                 self.curves[metric] = {
                     'x_cmd': self.plots[metric].plot(pen=pg.mkPen('r', width=2, style=pg.QtCore.Qt.DashLine), name='X Command'),
                     'x_real': self.plots[metric].plot(pen=pg.mkPen('r', width=2), name='X Actual'),
@@ -153,10 +158,22 @@ class RewardPlotter:
         self.executor.shutdown(wait=True)
 
     async def reset(self):
-        """Reset all plots"""
-        for name in self.plot_data.keys():
-            self.plot_data[name] = []
-        self.traj_data = {}
+        """Reset all plots by clearing data while preserving structure"""
+        # Recursively clear nested dictionaries while preserving structure
+        def clear_data_structure(data):
+            if isinstance(data, dict):
+                return {k: clear_data_structure(v) for k, v in data.items()}
+            elif isinstance(data, list):
+                return []
+            else:
+                return data
+            
+        # clear queue and then wait for it to be processed by the data loop
+        self.plot_queue = asyncio.Queue()
+        await asyncio.sleep(0.5)
+
+        self.plot_data = clear_data_structure(self.plot_data)
+        self.traj_data = clear_data_structure(self.traj_data)
         self.data_needs_update = True
         
     async def _data_loop(self):
@@ -202,13 +219,9 @@ class RewardPlotter:
             if not 'obs' in self.traj_data:
                 self.traj_data['obs'] = {
                     'sensor_observation_base_site_linvel': [],
-                    'sensor_observation_left_foot_force': [],
-                    'sensor_observation_right_foot_force': [],
                     'feet_contact_observation': []
                 }
             self.traj_data['obs']['sensor_observation_base_site_linvel'].append(mjdata['base_site_linvel'])
-            self.traj_data['obs']['sensor_observation_left_foot_force'].append(mjdata['left_foot_force'])
-            self.traj_data['obs']['sensor_observation_right_foot_force'].append(mjdata['right_foot_force'])
 
             # feet contact obs # TODO should really be done in parallel
             observation_input = self.get_sparse_obs_input(mjdata['contact']['geom'], mjdata['contact']['dist'])
@@ -225,12 +238,16 @@ class RewardPlotter:
             xquat=jnp.stack(self.traj_data['xquat']),
             command={k: jnp.stack(v) for k, v in self.traj_data['command'].items()},
             obs={k: jnp.stack(v) for k, v in self.traj_data['obs'].items()},
+            done=jnp.zeros((len(self.traj_data['qpos']), 1), dtype=jnp.bool_)
         )
 
         for reward in self.rewards:
             try:
                 name = reward.__class__.__name__
-                reward_values = reward.get_reward(traj)
+                if hasattr(reward, 'get_reward_stateful'):
+                    reward_values, _ = reward.get_reward_stateful(traj, reward.initial_carry(None))
+                else:
+                    reward_values = reward.get_reward(traj)
                 self.plot_data[name] = [float(x) for x in reward_values.flatten()]
             except Exception as e:
                 import traceback
@@ -242,6 +259,10 @@ class RewardPlotter:
         heading_quats = xax.euler_to_quat(base_eulers)
         local_frame_linvel = xax.rotate_vector_by_quat(traj.obs['sensor_observation_base_site_linvel'], heading_quats, inverse=True)
 
+        self.plot_data['feet_contact_observation'] = {
+            'left_foot_contact': [float(np.any(x[0:2])) for x in self.traj_data['obs']['feet_contact_observation']],
+            'right_foot_contact': [float(np.any(x[2:])) for x in self.traj_data['obs']['feet_contact_observation']]
+        }
         self.plot_data['linvel'] = {
             'x_cmd': [float(x[0]) for x in self.traj_data['command']['linear_velocity_command']],
             'x_real': [float(x[0]) for x in local_frame_linvel],
@@ -313,8 +334,6 @@ class RewardPlotter:
             'xquat': np.array(mjdata.xquat, copy=True),
             'time': float(mjdata.time),
             'base_site_linvel': np.array(mjdata.sensor('base_site_linvel').data, copy=True),
-            'left_foot_force': np.array(mjdata.sensor('left_foot_force').data, copy=True),
-            'right_foot_force': np.array(mjdata.sensor('right_foot_force').data, copy=True),
             'heading': np.array([heading]),
             'contact': {
                 'geom': np.array(mjdata.contact.geom, copy=True),
