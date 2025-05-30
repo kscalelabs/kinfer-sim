@@ -14,7 +14,8 @@ from kscale.web.gen.api import RobotURDFMetadataOutput
 from mujoco_scenes.mjcf import load_mjmodel
 
 from kinfer_sim.actuators import Actuator, ActuatorCommandDict, create_actuator
-from kinfer_sim.viewer import get_viewer
+from kmv import DefaultMujocoViewer, QtViewer
+from kmv.viewer import RenderMode
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +80,69 @@ def get_solver(solver: str) -> mujoco.mjtSolver:
             return mujoco.mjtSolver.mjSOL_NEWTON
         case _:
             raise ValueError(f"Invalid solver: {solver}")
+
+def get_viewer(
+    mj_model: mujoco.MjModel,
+    render_with_glfw: bool,
+    render_width: int = 640,
+    render_height: int = 480,
+    render_distance: float = 3.5,
+    render_azimuth: float = 90.0,
+    render_elevation: float = -10.0,
+    render_lookat: tuple[float, float, float] = (0.0, 0.0, 0.5),
+    render_track_body_id: int | None = None,
+    render_camera_name: str | None = None,
+    render_shadow: bool = False,
+    render_reflection: bool = False,
+    render_contact_force: bool = False,
+    render_contact_point: bool = False,
+    render_inertia: bool = False,
+    mj_data: mujoco.MjData | None = None,
+    save_path: str | Path | None = None,
+    mode: RenderMode | None = None,
+) -> QtViewer | DefaultMujocoViewer:
+    if mode is None:
+        mode = "window" if save_path is None else "offscreen"
+
+    if (render_with_glfw := render_with_glfw) is None:
+        render_with_glfw = mode == "window"
+
+    viewer: QtViewer | DefaultMujocoViewer
+
+    if render_with_glfw:
+        viewer = QtViewer(
+            mj_model,
+            data=mj_data,
+            mode=mode,
+            width=render_width,
+            height=render_height,
+            shadow=render_shadow,
+            reflection=render_reflection,
+            contact_force=render_contact_force,
+            contact_point=render_contact_point,
+            inertia=render_inertia,
+        )
+
+    else:
+        viewer = DefaultMujocoViewer(
+            mj_model,
+            width=render_width,
+            height=render_height,
+        )
+
+    # Sets the viewer camera.
+    viewer.cam.distance = render_distance
+    viewer.cam.azimuth = render_azimuth
+    viewer.cam.elevation = render_elevation
+    viewer.cam.lookat[:] = render_lookat
+    if render_track_body_id is not None:
+        viewer.cam.trackbodyid = render_track_body_id
+        viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+
+    if render_camera_name is not None:
+        viewer.set_camera(render_camera_name)
+
+    return viewer
 
 
 class MujocoSimulator:
