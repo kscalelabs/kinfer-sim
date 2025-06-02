@@ -83,7 +83,7 @@ class RewardPlotter:
             self.win.nextRow()
 
         # command plots
-        additional_metrics = ['feet_contact_observation', 'linvel', 'angvel', 'base_height', 'xyorientation']
+        additional_metrics = ['feet_force_touch_observation', 'feet_contact_observation', 'linvel', 'angvel', 'base_height', 'xyorientation']
         for metric in additional_metrics:
             self.plots[metric] = self.win.addPlot(title=metric.capitalize())
             self.plots[metric].setXLink(first_plot)  # Link x-axis to first plot
@@ -92,12 +92,7 @@ class RewardPlotter:
             self.plots[metric].addLegend()
             self.plots[metric].showGrid(x=True, y=True, alpha=0.3)
 
-            if metric == 'feet_contact_observation':
-                self.curves[metric] = {
-                    'left_foot_contact': self.plots[metric].plot(pen=pg.mkPen('r', width=2, style=pg.QtCore.Qt.DashLine), name='Left Foot Contact'),
-                    'right_foot_contact': self.plots[metric].plot(pen=pg.mkPen('g', width=2, style=pg.QtCore.Qt.DashLine), name='Right Foot Contact')
-                }
-            elif metric == 'linvel':
+            if metric == 'linvel':
                 self.curves[metric] = {
                     'x_cmd': self.plots[metric].plot(pen=pg.mkPen('r', width=2, style=pg.QtCore.Qt.DashLine), name='X Command'),
                     'x_real': self.plots[metric].plot(pen=pg.mkPen('r', width=2), name='X Actual'),
@@ -123,6 +118,17 @@ class RewardPlotter:
                     'roll_cmd': self.plots[metric].plot(pen=pg.mkPen('c', width=2, style=pg.QtCore.Qt.DashLine), name='Roll Command'),
                     # 'roll_real': self.plots[metric].plot(pen=pg.mkPen('c', width=2), name='Roll Actual')
                 }
+            elif metric == 'feet_contact_observation':
+                self.curves[metric] = {
+                    'left_foot_contact': self.plots[metric].plot(pen=pg.mkPen('r', width=2, style=pg.QtCore.Qt.DashLine), name='Left Foot Contact'),
+                    'right_foot_contact': self.plots[metric].plot(pen=pg.mkPen('g', width=2, style=pg.QtCore.Qt.DashLine), name='Right Foot Contact')
+                }
+            elif metric == 'feet_force_touch_observation':
+                self.curves[metric] = {
+                    'left_foot_force': self.plots[metric].plot(pen=pg.mkPen('r', width=2, style=pg.QtCore.Qt.DashLine), name='Left Foot Force'),
+                    'right_foot_force': self.plots[metric].plot(pen=pg.mkPen('g', width=2, style=pg.QtCore.Qt.DashLine), name='Right Foot Force')
+                }
+           
             else:
                 self.curves[metric] = self.plots[metric].plot(pen='g')
             self.win.nextRow()
@@ -206,7 +212,8 @@ class RewardPlotter:
                     'linear_velocity_command': [],
                     'angular_velocity_command': [],
                     'base_height_command': [],
-                    'xyorientation_command': []
+                    'xyorientation_command': [],
+                    'unified_command': []
                 }
             self.traj_data['command']['linear_velocity_command'].append(obs_arrays['command'][0:2])
             ang_vel_cmd = obs_arrays['command'][2:8]
@@ -214,19 +221,20 @@ class RewardPlotter:
             self.traj_data['command']['angular_velocity_command'].append(ang_vel_cmd)
             self.traj_data['command']['base_height_command'].append(obs_arrays['command'][8:9])
             self.traj_data['command']['xyorientation_command'].append(obs_arrays['command'][9:11])
+            self.traj_data['command']['unified_command'].append(obs_arrays['command'])
 
             # some obs
             if not 'obs' in self.traj_data:
                 self.traj_data['obs'] = {
                     'sensor_observation_base_site_linvel': [],
-                    'feet_contact_observation': []
+                    'sensor_observation_left_foot_touch': [],
+                    'sensor_observation_right_foot_touch': []
                 }
             self.traj_data['obs']['sensor_observation_base_site_linvel'].append(mjdata['base_site_linvel'])
 
-            # feet contact obs # TODO should really be done in parallel
-            observation_input = self.get_sparse_obs_input(mjdata['contact']['geom'], mjdata['contact']['dist'])
-            feet_contact_obs = self.observations['FeetContactObservation'].observe(observation_input, None, None)
-            self.traj_data['obs']['feet_contact_observation'].append(feet_contact_obs)
+            # force obs
+            self.traj_data['obs']['sensor_observation_left_foot_touch'].append(mjdata['left_foot_touch'])
+            self.traj_data['obs']['sensor_observation_right_foot_touch'].append(mjdata['right_foot_touch'])
 
         if not new_data:
             return False
@@ -259,9 +267,13 @@ class RewardPlotter:
         heading_quats = xax.euler_to_quat(base_eulers)
         local_frame_linvel = xax.rotate_vector_by_quat(traj.obs['sensor_observation_base_site_linvel'], heading_quats, inverse=True)
 
+        self.plot_data['feet_force_touch_observation'] = {
+            'left_foot_force': [float(x[0]) for x in self.traj_data['obs']['sensor_observation_left_foot_touch']],
+            'right_foot_force': [float(x[0]) for x in self.traj_data['obs']['sensor_observation_right_foot_touch']]
+        }
         self.plot_data['feet_contact_observation'] = {
-            'left_foot_contact': [float(np.any(x[0:2])) for x in self.traj_data['obs']['feet_contact_observation']],
-            'right_foot_contact': [float(np.any(x[2:])) for x in self.traj_data['obs']['feet_contact_observation']]
+            'left_foot_contact': [float(x[0] > 0.5) for x in self.traj_data['obs']['sensor_observation_left_foot_touch']],
+            'right_foot_contact': [float(x[0] > 0.5) for x in self.traj_data['obs']['sensor_observation_right_foot_touch']]
         }
         self.plot_data['linvel'] = {
             'x_cmd': [float(x[0]) for x in self.traj_data['command']['linear_velocity_command']],
@@ -334,6 +346,8 @@ class RewardPlotter:
             'xquat': np.array(mjdata.xquat, copy=True),
             'time': float(mjdata.time),
             'base_site_linvel': np.array(mjdata.sensor('base_site_linvel').data, copy=True),
+            'left_foot_touch': np.array(mjdata.sensor('left_foot_touch').data, copy=True),
+            'right_foot_touch': np.array(mjdata.sensor('right_foot_touch').data, copy=True),
             'heading': np.array([heading]),
             'contact': {
                 'geom': np.array(mjdata.contact.geom, copy=True),
