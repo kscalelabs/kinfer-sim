@@ -36,7 +36,7 @@ class Trajectory:
 
 class RewardPlotter:
     def __init__(self, mujoco_model: mujoco.MjModel):
-        path_to_train_file = "/home/bart/kbot-joystick/train.py"
+        path_to_train_file = "/home/bart/kbot-joystick/train.py" # TODO
         spec = importlib.util.spec_from_file_location("train", path_to_train_file)
         train = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(train)
@@ -49,13 +49,6 @@ class RewardPlotter:
             print(f"\n{i}. {reward_name}")
             print(f"   {reward.__doc__ or 'No description available'}")
         print("\n" + "=" * 30 + "\n")
-
-        # get observations
-        # self.observations = train.HumanoidWalkingTask.get_observations(self=None, physics_model=mujoco_model)
-        # self.observations = {obs.__class__.__name__: obs for obs in self.observations}
-        # print(f"found {len(self.observations)} observations")
-        # for i, obs in enumerate(self.observations):
-        #     print(f"{i}: {obs}")
 
         # Initialize PyQtPlot window and widgets
         self.app = pg.mkQApp()
@@ -286,9 +279,9 @@ class RewardPlotter:
             'base_height_real': [float(x[1, 2]) for x in self.traj_data['xpos']]
         }
         self.plot_data['xyorientation'] = {
-            'pitch_cmd': [float(x[9]) for x in self.traj_data['command']['unified_command']],
+            'roll_cmd': [float(x[9]) for x in self.traj_data['command']['unified_command']],
             # 'pitch_real': [float(x[0]) for x in self.traj_data['xquat'][:, 0]],
-            'roll_cmd': [float(x[10]) for x in self.traj_data['command']['unified_command']],
+            'pitch_cmd': [float(x[10]) for x in self.traj_data['command']['unified_command']],
             # 'roll_real': [float(x[1]) for x in self.traj_data['xquat'][:, 1]]
         }
 
@@ -351,37 +344,3 @@ class RewardPlotter:
         }
         obs_arrays_copy = {k: np.array(v, copy=True) for k, v in obs_arrays.items()}
         await self.plot_queue.put((mjdata_copy, obs_arrays_copy))
-
-    @staticmethod
-    def get_sparse_obs_input(geom: np.ndarray, dist: np.ndarray):
-        """
-        Create a minimal mock structure for contact data to call the observe function
-        """
-        class MinimalContact:
-            def __init__(self, geom, dist):
-                self.geom = geom
-                self.dist = dist
-
-        class MinimalMjData:
-            def __init__(self, geom, dist):
-                self.contact = MinimalContact(
-                    geom,
-                    dist
-                )
-
-        class MinimalPhysicsState:
-            def __init__(self, data):
-                self.data = data
-
-        class MinimalObservationInput:
-            def __init__(self, physics_state):
-                self.physics_state = physics_state
-
-        # Create the minimal observation input with just the contact data
-        minimal_mjdata = MinimalMjData(geom, dist)
-        minimal_physics_state = MinimalPhysicsState(minimal_mjdata)
-        minimal_observation_input = MinimalObservationInput(minimal_physics_state)
-
-        return minimal_observation_input
-
-

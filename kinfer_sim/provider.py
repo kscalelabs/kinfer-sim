@@ -277,7 +277,12 @@ class ModelProvider(ModelProviderABC):
         # Process any queued keyboard commands
         if self.key_queue is not None: # TODO this here??
             self.process_key_queue()
-            logging.info(f"command array: [{', '.join(f'{x:.2f}' for x in self.command_array)}]")
+            logging.info(f"Command: \033[31mVx={self.command_array[0]:.2f}\033[0m, "
+                        f"\033[32mVy={self.command_array[1]:.2f}\033[0m, "
+                        f"\033[33mωz={self.command_array[2]:.2f}\033[0m, "
+                        f"\033[34mbaseheight={self.command_array[3]:.2f}\033[0m, "
+                        f"\033[36mbaseroll={self.command_array[4]:.2f}\033[0m, "
+                        f"\033[35mbasepitch={self.command_array[5]:.2f}\033[0m")
 
         self.heading += self.command_array[2] * self.simulator._control_dt
         inv_heading_quat = euler_to_quat(np.array([0, 0, -self.heading]))

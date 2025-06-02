@@ -52,8 +52,9 @@ class ServerConfig(tap.TypedArgs):
     save_video: bool = tap.arg(default=False, help="Save video")
     save_logs: bool = tap.arg(default=False, help="Save logs")
 
-    # Model settings
+    # Keyboard settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
+    plot_rewards: bool = tap.arg(default=False, help="Plot rewards")
 
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
@@ -106,6 +107,7 @@ class SimulationServer:
         self._reset_queue = reset_queue
         self._pause_queue = pause_queue
         self._is_paused = False
+        self._plot_rewards = config.plot_rewards
 
     async def _handle_pause(self) -> None:
         """Handle pause state changes from the pause queue."""
@@ -136,8 +138,9 @@ class SimulationServer:
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
 
-        reward_plotter = RewardPlotter(mujoco_model=self.simulator._model)
-        await reward_plotter.start()
+        if self._plot_rewards:
+            reward_plotter = RewardPlotter(mujoco_model=self.simulator._model)
+            await reward_plotter.start()
 
         loop = asyncio.get_running_loop()
 
@@ -164,7 +167,8 @@ class SimulationServer:
                     model_provider.arrays.clear()
                     if self._reset_queue is not None and not self._reset_queue.empty():
                         await self.simulator.reset()
-                        await reward_plotter.reset()
+                        if self._plot_rewards:
+                            await reward_plotter.reset()
                         self._reset_queue.get()
 
                     # Runs the simulation for one step.
@@ -177,11 +181,12 @@ class SimulationServer:
                     await loop.run_in_executor(None, model_runner.take_action, output)
 
                     # add last mjdata to plotter
-                    await reward_plotter.add_data(
-                        mjdata=self.simulator._data,
-                        obs_arrays=model_provider.arrays.copy(),
-                        heading=model_provider.heading,
-                    )
+                    if self._plot_rewards:
+                        await reward_plotter.add_data(
+                            mjdata=self.simulator._data,
+                            obs_arrays=model_provider.arrays.copy(),
+                            heading=model_provider.heading,
+                        )
 
                     if frames is not None:
                         frames.append(self.simulator.read_pixels())
