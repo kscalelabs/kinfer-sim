@@ -102,9 +102,9 @@ class RewardPlotter:
             elif metric == 'angvel':
                 self.curves[metric] = {
                     'wz_cmd': self.plots[metric].plot(pen=pg.mkPen('y', width=2, style=pg.QtCore.Qt.DashLine), name='ωz Command'),
-                    # 'wz_real': self.plots[metric].plot(pen=pg.mkPen('y', width=2), name='ωz Actual')
-                    'heading_cmd': self.plots[metric].plot(pen=pg.mkPen('y', width=2), name='Heading'),
-                    # 'heading_real': self.plots[metric].plot(pen=pg.mkPen('y', width=2), name='Heading Actual')
+                    'wz_real': self.plots[metric].plot(pen=pg.mkPen('y', width=2), name='ωz Actual'),
+                    'heading_cmd': self.plots[metric].plot(pen=pg.mkPen('orange', width=2, style=pg.QtCore.Qt.DashLine), name='Heading Command'),
+                    # 'heading_real': self.plots[metric].plot(pen=pg.mkPen('orange', width=2), name='Heading Actual')
                 }
             elif metric == 'base_height':
                 self.curves[metric] = {
@@ -209,30 +209,23 @@ class RewardPlotter:
             # commands
             if not 'command' in self.traj_data:
                 self.traj_data['command'] = {
-                    'linear_velocity_command': [],
-                    'angular_velocity_command': [],
-                    'base_height_command': [],
-                    'xyorientation_command': [],
                     'unified_command': []
                 }
-            self.traj_data['command']['linear_velocity_command'].append(obs_arrays['command'][0:2])
-            ang_vel_cmd = obs_arrays['command'][2:8]
-            ang_vel_cmd[-1] = mjdata['heading'][0]
-            self.traj_data['command']['angular_velocity_command'].append(ang_vel_cmd)
-            self.traj_data['command']['base_height_command'].append(obs_arrays['command'][8:9])
-            self.traj_data['command']['xyorientation_command'].append(obs_arrays['command'][9:11])
-            self.traj_data['command']['unified_command'].append(obs_arrays['command'])
+            unified_command = obs_arrays['command']
+            unified_command[7] = mjdata['heading'][0]
+            print(f"unified command[7]: {unified_command[7]}")
+            self.traj_data['command']['unified_command'].append(unified_command)
 
             # some obs
             if not 'obs' in self.traj_data:
                 self.traj_data['obs'] = {
                     'sensor_observation_base_site_linvel': [],
+                    'sensor_observation_base_site_angvel': [],
                     'sensor_observation_left_foot_touch': [],
                     'sensor_observation_right_foot_touch': []
                 }
             self.traj_data['obs']['sensor_observation_base_site_linvel'].append(mjdata['base_site_linvel'])
-
-            # force obs
+            self.traj_data['obs']['sensor_observation_base_site_angvel'].append(mjdata['base_site_angvel'])
             self.traj_data['obs']['sensor_observation_left_foot_touch'].append(mjdata['left_foot_touch'])
             self.traj_data['obs']['sensor_observation_right_foot_touch'].append(mjdata['right_foot_touch'])
 
@@ -276,25 +269,25 @@ class RewardPlotter:
             'right_foot_contact': [float(x[0] > 0.5) for x in self.traj_data['obs']['sensor_observation_right_foot_touch']]
         }
         self.plot_data['linvel'] = {
-            'x_cmd': [float(x[0]) for x in self.traj_data['command']['linear_velocity_command']],
+            'x_cmd': [float(x[0]) for x in self.traj_data['command']['unified_command']],
             'x_real': [float(x[0]) for x in local_frame_linvel],
-            'y_cmd': [float(x[1]) for x in self.traj_data['command']['linear_velocity_command']],
+            'y_cmd': [float(x[1]) for x in self.traj_data['command']['unified_command']],
             'y_real': [float(x[1]) for x in local_frame_linvel]
         }
         self.plot_data['angvel'] = {
-            'wz_cmd': [float(x[0]) for x in self.traj_data['command']['angular_velocity_command']],
-            # 'wz_real': [float(x[0]) for x in self.traj_data['obs']['sensor_observation_base_site_angvel']]
-            'heading_cmd': [float(x[-1]) for x in self.traj_data['command']['angular_velocity_command']],
+            'wz_cmd': [float(x[2]) for x in self.traj_data['command']['unified_command']],
+            'wz_real': [float(x[2]) for x in self.traj_data['obs']['sensor_observation_base_site_angvel']], # TODO BUG not correct
+            'heading_cmd': [float(x[7]) for x in self.traj_data['command']['unified_command']],
             # 'heading_real': [float(x[0]) for x in self.traj_data['heading']]
         }
         self.plot_data['base_height'] = {
-            'base_height_cmd': [float(x) for x in self.traj_data['command']['base_height_command']],
+            'base_height_cmd': [float(x[8]) for x in self.traj_data['command']['unified_command']],
             'base_height_real': [float(x[1, 2]) for x in self.traj_data['xpos']]
         }
         self.plot_data['xyorientation'] = {
-            'pitch_cmd': [float(x[0]) for x in self.traj_data['command']['xyorientation_command']],
+            'pitch_cmd': [float(x[9]) for x in self.traj_data['command']['unified_command']],
             # 'pitch_real': [float(x[0]) for x in self.traj_data['xquat'][:, 0]],
-            'roll_cmd': [float(x[1]) for x in self.traj_data['command']['xyorientation_command']],
+            'roll_cmd': [float(x[10]) for x in self.traj_data['command']['unified_command']],
             # 'roll_real': [float(x[1]) for x in self.traj_data['xquat'][:, 1]]
         }
 
@@ -346,6 +339,7 @@ class RewardPlotter:
             'xquat': np.array(mjdata.xquat, copy=True),
             'time': float(mjdata.time),
             'base_site_linvel': np.array(mjdata.sensor('base_site_linvel').data, copy=True),
+            'base_site_angvel': np.array(mjdata.sensor('base_site_angvel').data, copy=True),
             'left_foot_touch': np.array(mjdata.sensor('left_foot_touch').data, copy=True),
             'right_foot_touch': np.array(mjdata.sensor('right_foot_touch').data, copy=True),
             'heading': np.array([heading]),
