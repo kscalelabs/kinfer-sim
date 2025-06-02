@@ -43,18 +43,19 @@ class RewardPlotter:
         
         # Get the actual rewards being used in train.py
         self.rewards = train.HumanoidWalkingTask.get_rewards(self=None, physics_model=mujoco_model)
+        self.rewards = {reward.__class__.__name__: reward for reward in self.rewards}
         print("\n=== Found Reward Classes ===")
-        for i, reward in enumerate(self.rewards, 1):
-            print(f"\n{i}. {reward.__class__.__name__}")
+        for i, (reward_name, reward) in enumerate(self.rewards.items(), 1):
+            print(f"\n{i}. {reward_name}")
             print(f"   {reward.__doc__ or 'No description available'}")
         print("\n" + "=" * 30 + "\n")
 
         # get observations
-        self.observations = train.HumanoidWalkingTask.get_observations(self=None, physics_model=mujoco_model)
-        self.observations = {obs.__class__.__name__: obs for obs in self.observations}
-        print(f"found {len(self.observations)} observations")
-        for i, obs in enumerate(self.observations):
-            print(f"{i}: {obs}")
+        # self.observations = train.HumanoidWalkingTask.get_observations(self=None, physics_model=mujoco_model)
+        # self.observations = {obs.__class__.__name__: obs for obs in self.observations}
+        # print(f"found {len(self.observations)} observations")
+        # for i, obs in enumerate(self.observations):
+        #     print(f"{i}: {obs}")
 
         # Initialize PyQtPlot window and widgets
         self.app = pg.mkQApp()
@@ -68,8 +69,8 @@ class RewardPlotter:
         
         # Setup reward plots
         first_plot = None
-        for i, reward in enumerate(self.rewards):
-            name = reward.__class__.__name__
+        for i, (reward_name, reward) in enumerate(self.rewards.items(), 1):
+            name = reward_name
             self.plots[name] = self.win.addPlot(title=name)
             if first_plot is None:
                 first_plot = self.plots[name]
@@ -213,7 +214,6 @@ class RewardPlotter:
                 }
             unified_command = obs_arrays['command']
             unified_command[7] = mjdata['heading'][0]
-            print(f"unified command[7]: {unified_command[7]}")
             self.traj_data['command']['unified_command'].append(unified_command)
 
             # some obs
@@ -242,9 +242,9 @@ class RewardPlotter:
             done=jnp.zeros((len(self.traj_data['qpos']),), dtype=jnp.bool_)
         )
 
-        for reward in self.rewards:
+        for reward_name, reward in self.rewards.items():
             try:
-                name = reward.__class__.__name__
+                name = reward_name
                 if hasattr(reward, 'get_reward_stateful'):
                     reward_values, _ = reward.get_reward_stateful(traj, reward.initial_carry(None))
                 else:
@@ -253,7 +253,7 @@ class RewardPlotter:
             except Exception as e:
                 import traceback
                 print(f"Full traceback:\n{traceback.format_exc()}")
-                print(f"Error computing reward for {reward.__class__.__name__}: {e}")
+                print(f"Error computing reward for {reward_name}: {e}")
 
         base_eulers = xax.quat_to_euler(traj.xquat[:, 1, :])
         base_eulers = base_eulers.at[:, :2].set(0.0)
@@ -280,8 +280,9 @@ class RewardPlotter:
             'heading_cmd': [float(x[7]) for x in self.traj_data['command']['unified_command']],
             # 'heading_real': [float(x[0]) for x in self.traj_data['heading']]
         }
+        standard_height = self.rewards['BaseHeightReward'].standard_height
         self.plot_data['base_height'] = {
-            'base_height_cmd': [float(x[8]) for x in self.traj_data['command']['unified_command']],
+            'base_height_cmd': [float(x[8]+standard_height) for x in self.traj_data['command']['unified_command']],
             'base_height_real': [float(x[1, 2]) for x in self.traj_data['xpos']]
         }
         self.plot_data['xyorientation'] = {

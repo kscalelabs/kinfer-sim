@@ -292,7 +292,7 @@ class ModelProvider(ModelProviderABC):
         ])
 
         self.arrays["command"] = command_obs
-        return command_obs # this is not the problem!
+        return command_obs
 
     def take_action(self, joint_names: Sequence[str], action: np.ndarray) -> None:
         assert action.shape == (len(joint_names),)
