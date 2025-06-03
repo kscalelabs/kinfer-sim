@@ -347,6 +347,15 @@ class MujocoSimulator:
         mujoco.mj_forward(self._model, self._data)
         mujoco.mj_step(self._model, self._data)
         
+        # ── Drain any mouse-drag wrenches coming from the viewer ──────────
+        if isinstance(self._viewer, QtViewer):
+            while True:                                  # flush backlog
+                forces = self._viewer.poll_forces()
+                if forces is None:
+                    break
+                self._data.xfrc_applied[:] = forces      # apply once; MuJoCo
+                                                         # clears it next frame
+
         # NEW: push live state to the out-of-process viewer
         if isinstance(self._viewer, QtViewer):
             self._viewer.push_state(
