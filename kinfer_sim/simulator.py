@@ -14,8 +14,8 @@ from kscale.web.gen.api import RobotURDFMetadataOutput
 from mujoco_scenes.mjcf import load_mjmodel
 
 from kinfer_sim.actuators import Actuator, ActuatorCommandDict, create_actuator
-from kmv import DefaultMujocoViewer, QtViewer
-from kmv.viewer import RenderMode
+from kmv.app.viewer import DefaultMujocoViewer, QtViewer
+from kmv.core.types import RenderMode
 
 logger = logging.getLogger(__name__)
 
@@ -112,15 +112,19 @@ def get_viewer(
     if render_with_glfw:
         viewer = QtViewer(
             mj_model,
-            data=mj_data,
-            mode=mode,
-            width=render_width,
-            height=render_height,
-            shadow=render_shadow,
-            reflection=render_reflection,
-            contact_force=render_contact_force,
-            contact_point=render_contact_point,
-            inertia=render_inertia,
+            width         = render_width,
+            height        = render_height,
+            shadow        = render_shadow,
+            reflection    = render_reflection,
+            contact_force = render_contact_force,
+            contact_point = render_contact_point,
+            inertia       = render_inertia,
+            enable_plots  = True,
+            camera_distance  = render_distance,
+            camera_azimuth   = render_azimuth,
+            camera_elevation = render_elevation,
+            camera_lookat    = render_lookat,
+            track_body_id    = render_track_body_id,
         )
 
     else:
@@ -130,17 +134,17 @@ def get_viewer(
             height=render_height,
         )
 
-    # Sets the viewer camera.
-    viewer.cam.distance = render_distance
-    viewer.cam.azimuth = render_azimuth
-    viewer.cam.elevation = render_elevation
-    viewer.cam.lookat[:] = render_lookat
-    if render_track_body_id is not None:
-        viewer.cam.trackbodyid = render_track_body_id
-        viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+        # Sets the viewer camera.
+        viewer.cam.distance = render_distance
+        viewer.cam.azimuth = render_azimuth
+        viewer.cam.elevation = render_elevation
+        viewer.cam.lookat[:] = render_lookat
+        if render_track_body_id is not None:
+            viewer.cam.trackbodyid = render_track_body_id
+            viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
 
-    if render_camera_name is not None:
-        viewer.set_camera(render_camera_name)
+        if render_camera_name is not None:
+            viewer.set_camera(render_camera_name)
 
     return viewer
 
@@ -342,14 +346,25 @@ class MujocoSimulator:
 
         mujoco.mj_forward(self._model, self._data)
         mujoco.mj_step(self._model, self._data)
+        
+        # NEW: push live state to the out-of-process viewer
+        if isinstance(self._viewer, QtViewer):
+            self._viewer.push_state(
+                self._data.qpos,
+                self._data.qvel,
+                sim_time=float(self._data.time),
+            )
 
         return self._data
 
     def render(self) -> None:
-        self._viewer.render()
+        pass
+        # self._viewer.render()
 
     def read_pixels(self) -> np.ndarray:
-        return self._viewer.read_pixels()
+        if isinstance(self._viewer, DefaultMujocoViewer):
+            return self._viewer.read_pixels()
+        raise RuntimeError("read_pixels() is only available when render_mode='offscreen'")
 
     async def get_sensor_data(self, name: str) -> np.ndarray:
         """Get data from a named sensor."""
