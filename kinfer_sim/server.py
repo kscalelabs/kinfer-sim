@@ -105,7 +105,7 @@ class SimulationServer:
         self._kinfer_path = config.kinfer_path
         self._stop_event = asyncio.Event()
         self._step_lock = asyncio.Semaphore(1)
-        self._render_decimation = int(1.0 / config.render_frequency)
+        self._video_render_decimation = int(1.0 / config.render_frequency)
         self._quat_name = config.quat_name
         self._acc_name = config.acc_name
         self._gyro_name = config.gyro_name
@@ -147,9 +147,10 @@ class SimulationServer:
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
-        start_time = time.time()
+        start_time = time.perf_counter()
         last_fps_time = start_time
-        num_renders = 0
+        wall_next_step = start_time
+        ctrl_dt = 1.0 / self.simulator._control_frequency
         num_steps = 0
         fps_update_interval = 1.0  # Update FPS every second
 
@@ -188,34 +189,30 @@ class SimulationServer:
                 output, carry = await loop.run_in_executor(None, model_runner.step, carry)
                 await loop.run_in_executor(None, model_runner.take_action, output)
 
-                if num_steps % self._render_decimation == 0:
-                    num_renders += 1
-
+                num_steps += 1
                 if logs is not None:
                     logs.append(model_provider.arrays.copy())
 
-                if self._video_writer is not None and num_steps % self._render_decimation == 0:
+                if self._video_writer is not None and num_steps % self._video_render_decimation == 0:
                     self._video_writer.append(self.simulator.read_pixels())
 
-                # Sleep until the next control update, to avoid rendering
-                # faster than real-time.
-                current_time = time.time()
-                if current_time < self.simulator._sim_time:
-                    await asyncio.sleep(self.simulator._sim_time - current_time)
-                num_steps += 1
+                # Match the simulation time to the wall clock time.
+                wall_next_step += ctrl_dt
+                sleep_dt = wall_next_step - time.perf_counter()
+                if sleep_dt > 0.0:
+                    await asyncio.sleep(sleep_dt)
 
                 # Calculate and log FPS
+                current_time = time.perf_counter()
                 if current_time - last_fps_time >= fps_update_interval:
-                    fps = num_steps / (current_time - last_fps_time)
-                    render_fps = num_renders / (current_time - last_fps_time)
+                    physics_fps = num_steps / (current_time - last_fps_time)
                     logger.info(
-                        "FPS: %.2f, Render FPS: %.2f, Simulation time: %f",
-                        fps,
-                        render_fps,
-                        self.simulator._sim_time,
+                        "Physics FPS: %.2f, Simulation time: %.3f, Wall time: %.3f",
+                        physics_fps,
+                        self.simulator.sim_time,
+                        current_time,
                     )
                     num_steps = 0
-                    num_renders = 0
                     last_fps_time = current_time
 
         except Exception as e:
