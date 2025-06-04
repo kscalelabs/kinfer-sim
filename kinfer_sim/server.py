@@ -20,6 +20,7 @@ from kscale.web.utils import get_robots_dir, should_refresh_file
 
 from kinfer_sim.provider import ControlVectorInputState, InputState, JoystickInputState, ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
+
 # from kmv.utils.logging import VideoWriter, save_logs
 
 logger = logging.getLogger(__name__)

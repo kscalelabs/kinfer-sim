@@ -10,12 +10,12 @@ from typing import Literal, NotRequired, TypedDict, TypeVar
 
 import mujoco
 import numpy as np
+from kmv.app.viewer import DefaultMujocoViewer, QtViewer
+from kmv.core.types import RenderMode
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from mujoco_scenes.mjcf import load_mjmodel
 
 from kinfer_sim.actuators import Actuator, ActuatorCommandDict, create_actuator
-from kmv.app.viewer import DefaultMujocoViewer, QtViewer
-from kmv.core.types import RenderMode
 
 logger = logging.getLogger(__name__)
 
@@ -81,6 +81,7 @@ def get_solver(solver: str) -> mujoco.mjtSolver:
         case _:
             raise ValueError(f"Invalid solver: {solver}")
 
+
 def get_viewer(
     mj_model: mujoco.MjModel,
     render_with_glfw: bool,
@@ -112,19 +113,19 @@ def get_viewer(
     if render_with_glfw:
         viewer = QtViewer(
             mj_model,
-            width         = render_width,
-            height        = render_height,
-            shadow        = render_shadow,
-            reflection    = render_reflection,
-            contact_force = render_contact_force,
-            contact_point = render_contact_point,
-            inertia       = render_inertia,
-            enable_plots  = True,
-            camera_distance  = render_distance,
-            camera_azimuth   = render_azimuth,
-            camera_elevation = render_elevation,
-            camera_lookat    = render_lookat,
-            track_body_id    = render_track_body_id,
+            width=render_width,
+            height=render_height,
+            shadow=render_shadow,
+            reflection=render_reflection,
+            contact_force=render_contact_force,
+            contact_point=render_contact_point,
+            inertia=render_inertia,
+            enable_plots=True,
+            camera_distance=render_distance,
+            camera_azimuth=render_azimuth,
+            camera_elevation=render_elevation,
+            camera_lookat=render_lookat,
+            track_body_id=render_track_body_id,
         )
 
     else:
@@ -352,15 +353,15 @@ class MujocoSimulator:
 
         mujoco.mj_forward(self._model, self._data)
         mujoco.mj_step(self._model, self._data)
-        
+
         # ── Drain any mouse-drag wrenches coming from the viewer ──────────
         if isinstance(self._viewer, QtViewer):
-            while True:                                  # flush backlog
+            while True:  # flush backlog
                 forces = self._viewer.drain_control_pipe()
                 if forces is None:
                     break
-                self._data.xfrc_applied[:] = forces      # apply once; MuJoCo
-                                                         # clears it next frame
+                self._data.xfrc_applied[:] = forces  # apply once; MuJoCo
+                # clears it next frame
 
         # NEW: push live state to the out-of-process viewer
         if isinstance(self._viewer, QtViewer):
