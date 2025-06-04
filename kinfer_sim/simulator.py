@@ -350,7 +350,7 @@ class MujocoSimulator:
         # ── Drain any mouse-drag wrenches coming from the viewer ──────────
         if isinstance(self._viewer, QtViewer):
             while True:                                  # flush backlog
-                forces = self._viewer.poll_forces()
+                forces = self._viewer.drain_control_pipe()
                 if forces is None:
                     break
                 self._data.xfrc_applied[:] = forces      # apply once; MuJoCo
