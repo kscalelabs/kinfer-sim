@@ -354,28 +354,20 @@ class MujocoSimulator:
         mujoco.mj_forward(self._model, self._data)
         mujoco.mj_step(self._model, self._data)
 
-        # ── Drain any mouse-drag wrenches coming from the viewer ──────────
         if isinstance(self._viewer, QtViewer):
-            while True:  # flush backlog
-                forces = self._viewer.drain_control_pipe()
-                if forces is None:
-                    break
-                self._data.xfrc_applied[:] = forces  # apply once; MuJoCo
-                # clears it next frame
-
-        # NEW: push live state to the out-of-process viewer
-        if isinstance(self._viewer, QtViewer):
+            # Push physics state to the viewer.
             self._viewer.push_state(
                 self._data.qpos,
                 self._data.qvel,
                 sim_time=float(self._data.time),
             )
 
-        return self._data
+            # Apply forces from the viewer.
+            xfrc = self._viewer.drain_control_pipe()
+            if xfrc is not None:
+                self._data.xfrc_applied[:] = xfrc
 
-    def render(self) -> None:
-        pass
-        # self._viewer.render()
+        return self._data
 
     def read_pixels(self) -> np.ndarray:
         if isinstance(self._viewer, DefaultMujocoViewer):

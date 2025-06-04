@@ -14,6 +14,7 @@ import numpy as np
 import typed_argparse as tap
 from askin import KeyboardController
 from kinfer.rust_bindings import PyModelRunner, metadata_from_json
+from kmv.app.viewer import QtViewer
 from kmv.utils.logging import VideoWriter, save_logs
 from kscale import K
 from kscale.web.gen.api import RobotURDFMetadataOutput
@@ -179,12 +180,15 @@ class SimulationServer:
                     for _ in range(self.simulator._sim_decimation):
                         await self.simulator.step()
 
+                if isinstance(self.simulator._viewer, QtViewer):
+                    if not self.simulator._viewer.is_open:
+                        break
+
                 # Offload blocking calls to the executor
                 output, carry = await loop.run_in_executor(None, model_runner.step, carry)
                 await loop.run_in_executor(None, model_runner.take_action, output)
 
                 if num_steps % self._render_decimation == 0:
-                    self.simulator.render()
                     num_renders += 1
 
                 if logs is not None:
@@ -223,6 +227,9 @@ class SimulationServer:
 
             if self._video_writer is not None:
                 self._video_writer.close()
+
+            if isinstance(self.simulator._viewer, QtViewer):
+                self.simulator._viewer.close()
 
             if logs is not None:
                 save_logs(logs, self._save_path / "logs")
