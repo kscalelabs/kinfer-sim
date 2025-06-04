@@ -149,7 +149,7 @@ class SimulationServer:
         """Run the simulation loop asynchronously."""
         start_time = time.perf_counter()
         last_fps_time = start_time
-        wall_next_step = start_time
+        wall_time_for_next_step = start_time
         ctrl_dt = 1.0 / self.simulator._control_frequency
         num_steps = 0
         fps_update_interval = 1.0  # Update FPS every second
@@ -181,6 +181,7 @@ class SimulationServer:
                     for _ in range(self.simulator._sim_decimation):
                         await self.simulator.step()
 
+                # Shut down if the viewer is closed.
                 if isinstance(self.simulator._viewer, QtViewer):
                     if not self.simulator._viewer.is_open:
                         break
@@ -197,8 +198,8 @@ class SimulationServer:
                     self._video_writer.append(self.simulator.read_pixels())
 
                 # Match the simulation time to the wall clock time.
-                wall_next_step += ctrl_dt
-                sleep_dt = wall_next_step - time.perf_counter()
+                wall_time_for_next_step += ctrl_dt
+                sleep_dt = wall_time_for_next_step - time.perf_counter()
                 if sleep_dt > 0.0:
                     await asyncio.sleep(sleep_dt)
 

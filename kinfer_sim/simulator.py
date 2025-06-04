@@ -372,7 +372,8 @@ class MujocoSimulator:
     def read_pixels(self) -> np.ndarray:
         if isinstance(self._viewer, DefaultMujocoViewer):
             return self._viewer.read_pixels()
-        raise RuntimeError("read_pixels() is only available when render_mode='offscreen'")
+        else:
+            raise RuntimeError("read_pixels() is only available with the DefaultMujocoViewer!")
 
     async def get_sensor_data(self, name: str) -> np.ndarray:
         """Get data from a named sensor."""
