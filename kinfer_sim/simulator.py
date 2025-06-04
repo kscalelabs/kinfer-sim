@@ -169,7 +169,7 @@ class MujocoSimulator:
         accelerometer_noise: float = 0.0,
         gyroscope_noise: float = 0.0,
         projected_gravity_noise: float = 0.0,
-        pd_update_frequency: float = 100.0,
+        pd_update_frequency: float = 1000.0,
         mujoco_scene: str = "smooth",
         integrator: str = "implicitfast",
         solver: str = "cg",
@@ -201,7 +201,8 @@ class MujocoSimulator:
         self._accelerometer_noise = accelerometer_noise
         self._gyroscope_noise = math.radians(gyroscope_noise)
         self._projected_gravity_noise = projected_gravity_noise
-        self._update_pd_delta = 1.0 / pd_update_frequency
+        self._update_pd_every_n_steps = max(1, int((1.0 / pd_update_frequency) / self._dt))
+        self._step = 0
         self._camera = camera
 
         # Gets the sim decimation.
@@ -314,7 +315,7 @@ class MujocoSimulator:
     async def step(self) -> None:
         """Execute one step of the simulation."""
         self._sim_time += self._dt
-
+        self._step += 1
         # Process commands that are ready to be applied
         commands_to_remove = []
         for name, (target_command, application_time) in self._next_commands.items():
@@ -329,18 +330,23 @@ class MujocoSimulator:
 
         mujoco.mj_forward(self._model, self._data)
 
+        prev_torque = self._data.ctrl[:]
         for joint_name, target_command in self._current_commands.items():
             joint = self._data.joint(joint_name)
             joint_id = self._joint_name_to_id[joint_name]
             actuator_id = self._joint_id_to_actuator_id[joint_id]
 
             actuator_command_dict: ActuatorCommandDict = target_command
-            torque = self._actuators[joint_id].get_ctrl(
-                actuator_command_dict,
-                qpos=float(joint.qpos),
-                qvel=float(joint.qvel),
-                dt=self._dt,
-            )
+            if self._step % self._update_pd_every_n_steps == 0:
+                torque = self._actuators[joint_id].get_ctrl(
+                    actuator_command_dict,
+                    qpos=float(joint.qpos),
+                    qvel=float(joint.qvel),
+                    dt=self._dt,
+                )
+            else:
+                torque = prev_torque[actuator_id]
+
             logger.debug("Setting ctrl for actuator %s to %f", actuator_id, torque)
             self._data.ctrl[actuator_id] = torque
 
