@@ -199,7 +199,7 @@ class SimulationServer:
 
                 # Match the simulation time to the wall clock time.
                 wall_time_for_next_step += ctrl_dt
-                await asyncio.sleep(max(0, wall_time_for_next_step - time.perf_counter())
+                await asyncio.sleep(max(0, wall_time_for_next_step - time.perf_counter()))
 
                 # Calculate and log FPS
                 current_time = time.perf_counter()
