@@ -173,6 +173,10 @@ class ModelProvider(ModelProviderABC):
                 inputs[input_type] = self.get_joint_angles(metadata.joint_names)  # type: ignore[attr-defined]
             elif input_type == "joint_angular_velocities":
                 inputs[input_type] = self.get_joint_angular_velocities(metadata.joint_names)  # type: ignore[attr-defined]
+            elif input_type == "initial_heading":
+                inputs[input_type] = np.zeros(1)
+            elif input_type == "quaternion":
+                inputs[input_type] = self.get_quaternion()
             elif input_type == "projected_gravity":
                 inputs[input_type] = self.get_projected_gravity()
             elif input_type == "accelerometer":
@@ -185,7 +189,6 @@ class ModelProvider(ModelProviderABC):
                 inputs[input_type] = self.get_time()
             else:
                 raise ValueError(f"Unknown input type: {input_type}")
-
         return inputs
 
     def get_joint_angles(self, joint_names: Sequence[str]) -> np.ndarray:
@@ -205,6 +208,13 @@ class ModelProvider(ModelProviderABC):
         )
         self.arrays["joint_velocities"] = velocities_array
         return velocities_array
+
+    def get_quaternion(self) -> np.ndarray:
+        quat_name = self.quat_name
+        sensor = self.simulator._data.sensor(quat_name)
+        quaternion = sensor.data
+        self.arrays["quaternion"] = quaternion
+        return quaternion
 
     def get_projected_gravity(self) -> np.ndarray:
         gravity = self.simulator._model.opt.gravity
