@@ -22,7 +22,7 @@ class Trajectory:
     qvel: Array
     xpos: Array
     xquat: Array
-    # ctrl: Array
+    ctrl: Array
     obs: dict[str, Array]
     command: dict[str, Array]
     # event_state: xax.FrozenDict[str, Array]
@@ -197,7 +197,7 @@ class RewardPlotter:
             mjdata, obs_arrays = self.plot_queue.get_nowait()
 
             # mjdata
-            for key in ['qpos', 'qvel', 'xpos', 'xquat', 'heading']:
+            for key in ['qpos', 'qvel', 'xpos', 'xquat', 'heading', 'ctrl']:
                 self.traj_data.setdefault(key, []).append(mjdata[key])
 
             # commands
@@ -232,6 +232,7 @@ class RewardPlotter:
             xquat=jnp.stack(self.traj_data['xquat']),
             command={k: jnp.stack(v) for k, v in self.traj_data['command'].items()},
             obs={k: jnp.stack(v) for k, v in self.traj_data['obs'].items()},
+            ctrl=jnp.stack(self.traj_data['ctrl']),
             done=jnp.zeros((len(self.traj_data['qpos']),), dtype=jnp.bool_)
         )
 
@@ -340,7 +341,8 @@ class RewardPlotter:
             'contact': {
                 'geom': np.array(mjdata.contact.geom, copy=True),
                 'dist': np.array(mjdata.contact.dist, copy=True)
-            }
+            },
+            'ctrl': np.array(mjdata.ctrl, copy=True)
         }
         obs_arrays_copy = {k: np.array(v, copy=True) for k, v in obs_arrays.items()}
         await self.plot_queue.put((mjdata_copy, obs_arrays_copy))
