@@ -131,6 +131,30 @@ class ControlVectorInputState(InputState):
             self.value[2] += self.STEP_SIZE
 
 
+class ExpandedControlVectorInputState(InputState):
+    """State to hold and modify control vector commands based on keyboard input."""
+
+    value: list[float]
+    STEP_SIZE: float = 0.1
+
+    def __init__(self) -> None:
+        self.value = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # x linear, y linear, yaw, base height, roll, pitch
+
+    async def update(self, key: str) -> None:
+        if key == "w":
+            self.value[0] += self.STEP_SIZE
+        elif key == "s":
+            self.value[0] -= self.STEP_SIZE
+        elif key == "a":
+            self.value[1] -= self.STEP_SIZE
+        elif key == "d":
+            self.value[1] += self.STEP_SIZE
+        elif key == "q":
+            self.value[2] -= self.STEP_SIZE
+        elif key == "e":
+            self.value[2] += self.STEP_SIZE
+
+
 class ModelProvider(ModelProviderABC):
     simulator: MujocoSimulator
     quat_name: str
@@ -212,9 +236,9 @@ class ModelProvider(ModelProviderABC):
     def get_quaternion(self) -> np.ndarray:
         quat_name = self.quat_name
         sensor = self.simulator._data.sensor(quat_name)
-        quaternion = sensor.data
-        self.arrays["quaternion"] = quaternion
-        return quaternion
+        quat = sensor.data
+        self.arrays["quaternion"] = quat
+        return quat
 
     def get_projected_gravity(self) -> np.ndarray:
         gravity = self.simulator._model.opt.gravity
