@@ -20,7 +20,13 @@ from kscale import K
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
-from kinfer_sim.provider import ControlVectorInputState, InputState, JoystickInputState, ModelProvider
+from kinfer_sim.provider import (
+    ControlVectorInputState,
+    ExpandedControlVectorInputState,
+    InputState,
+    JoystickInputState,
+    ModelProvider,
+)
 from kinfer_sim.simulator import MujocoSimulator
 
 logger = logging.getLogger(__name__)
@@ -56,7 +62,9 @@ class ServerConfig(tap.TypedArgs):
 
     # Model settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
-    command_type: Literal["joystick", "control_vector"] = tap.arg(default="joystick", help="Type of command to use")
+    command_type: Literal["joystick", "control_vector", "expanded_control_vector"] = tap.arg(
+        default="expanded_control_vector", help="Type of command to use"
+    )
 
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
@@ -282,6 +290,8 @@ async def serve(config: ServerConfig) -> None:
         key_state = JoystickInputState()
     elif config.command_type == "control_vector":
         key_state = ControlVectorInputState()
+    elif config.command_type == "expanded_control_vector":
+        key_state = ExpandedControlVectorInputState()
     else:
         raise ValueError(f"Invalid command type: {config.command_type}")
 
@@ -296,7 +306,7 @@ async def serve(config: ServerConfig) -> None:
                 key_state.value = [1, 0, 0, 0, 0, 0, 0]
 
             keyboard_controller = KeyboardController(key_handler, default=default)
-        elif config.command_type == "control_vector":
+        elif config.command_type in ["control_vector", "expanded_control_vector"]:
             keyboard_controller = KeyboardController(key_handler)
 
         await keyboard_controller.start()

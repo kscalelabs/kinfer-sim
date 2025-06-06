@@ -131,6 +131,30 @@ class ControlVectorInputState(InputState):
             self.value[2] += self.STEP_SIZE
 
 
+class ExpandedControlVectorInputState(InputState):
+    """State to hold and modify control vector commands based on keyboard input."""
+
+    value: list[float]
+    STEP_SIZE: float = 0.1
+
+    def __init__(self) -> None:
+        self.value = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # x linear, y linear, yaw, base height, roll, pitch
+
+    async def update(self, key: str) -> None:
+        if key == "w":
+            self.value[0] += self.STEP_SIZE
+        elif key == "s":
+            self.value[0] -= self.STEP_SIZE
+        elif key == "a":
+            self.value[1] -= self.STEP_SIZE
+        elif key == "d":
+            self.value[1] += self.STEP_SIZE
+        elif key == "q":
+            self.value[2] -= self.STEP_SIZE
+        elif key == "e":
+            self.value[2] += self.STEP_SIZE
+
+
 class ModelProvider(ModelProviderABC):
     simulator: MujocoSimulator
     quat_name: str
@@ -173,6 +197,10 @@ class ModelProvider(ModelProviderABC):
                 inputs[input_type] = self.get_joint_angles(metadata.joint_names)  # type: ignore[attr-defined]
             elif input_type == "joint_angular_velocities":
                 inputs[input_type] = self.get_joint_angular_velocities(metadata.joint_names)  # type: ignore[attr-defined]
+            elif input_type == "initial_heading":
+                inputs[input_type] = np.zeros(1)
+            elif input_type == "quaternion":
+                inputs[input_type] = self.get_quaternion()
             elif input_type == "projected_gravity":
                 inputs[input_type] = self.get_projected_gravity()
             elif input_type == "accelerometer":
@@ -185,7 +213,6 @@ class ModelProvider(ModelProviderABC):
                 inputs[input_type] = self.get_time()
             else:
                 raise ValueError(f"Unknown input type: {input_type}")
-
         return inputs
 
     def get_joint_angles(self, joint_names: Sequence[str]) -> np.ndarray:
@@ -206,11 +233,17 @@ class ModelProvider(ModelProviderABC):
         self.arrays["joint_velocities"] = velocities_array
         return velocities_array
 
-    def get_projected_gravity(self) -> np.ndarray:
-        gravity = self.simulator._model.opt.gravity
+    def get_quaternion(self) -> np.ndarray:
         quat_name = self.quat_name
         sensor = self.simulator._data.sensor(quat_name)
-        proj_gravity = rotate_vector_by_quat(gravity, sensor.data, inverse=True)
+        quat = sensor.data
+        self.arrays["quaternion"] = quat
+        return quat
+
+    def get_projected_gravity(self) -> np.ndarray:
+        gravity = self.simulator._model.opt.gravity
+        quat = self.get_quaternion()
+        proj_gravity = rotate_vector_by_quat(gravity, quat, inverse=True)
         proj_gravity += np.random.normal(
             -self.simulator._projected_gravity_noise, self.simulator._projected_gravity_noise, proj_gravity.shape
         )
