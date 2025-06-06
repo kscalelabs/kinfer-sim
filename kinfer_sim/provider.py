@@ -237,6 +237,7 @@ class ModelProvider(ModelProviderABC):
         quat_name = self.quat_name
         sensor = self.simulator._data.sensor(quat_name)
         quat = sensor.data
+        quat = np.array([quat[3], quat[0], quat[1], quat[2]], dtype=np.float32)
         self.arrays["quaternion"] = quat
         return quat
 
