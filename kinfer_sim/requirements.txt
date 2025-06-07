@@ -11,4 +11,3 @@ scipy
 mediapy
 typed-argparse
 pynput
-pyqtgraph
