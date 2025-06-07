@@ -102,9 +102,6 @@ def quat_to_euler(quat_4: np.ndarray, eps: float = 1e-6) -> np.ndarray:
     return np.concatenate([roll, pitch, yaw], axis=-1)
 
 
-
-
-
 class ModelProvider(ModelProviderABC):
     simulator: MujocoSimulator
     quat_name: str
