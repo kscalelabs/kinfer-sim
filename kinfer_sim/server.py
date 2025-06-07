@@ -17,7 +17,6 @@ from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
 from kinfer_sim.keyboard_listener import KeyboardListener
-from kinfer_sim.reward_plotter import RewardPlotter
 from kinfer_sim.provider import ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
 from kinfer_sim.viewer import save_logs, save_video
@@ -54,7 +53,6 @@ class ServerConfig(tap.TypedArgs):
 
     # Keyboard settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
-    plot_rewards: bool = tap.arg(default=False, help="Plot rewards")
 
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
@@ -107,7 +105,6 @@ class SimulationServer:
         self._reset_queue = reset_queue
         self._pause_queue = pause_queue
         self._is_paused = False
-        self._plot_rewards = config.plot_rewards
 
     async def _handle_pause(self) -> None:
         """Handle pause state changes from the pause queue."""
@@ -138,10 +135,6 @@ class SimulationServer:
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
 
-        if self._plot_rewards:
-            reward_plotter = RewardPlotter(mujoco_model=self.simulator._model)
-            await reward_plotter.start()
-
         loop = asyncio.get_running_loop()
 
         carry = model_runner.init()
@@ -167,8 +160,6 @@ class SimulationServer:
                     model_provider.arrays.clear()
                     if self._reset_queue is not None and not self._reset_queue.empty():
                         await self.simulator.reset()
-                        if self._plot_rewards:
-                            await reward_plotter.reset()
                         self._reset_queue.get()
 
                     # Runs the simulation for one step.
@@ -179,14 +170,6 @@ class SimulationServer:
                     # Offload blocking calls to the executor
                     output, carry = await loop.run_in_executor(None, model_runner.step, carry)
                     await loop.run_in_executor(None, model_runner.take_action, output)
-
-                    # add last mjdata to plotter
-                    if self._plot_rewards:
-                        await reward_plotter.add_data(
-                            mjdata=self.simulator._data,
-                            obs_arrays=model_provider.arrays.copy(),
-                            heading=model_provider.heading,
-                        )
 
                     if frames is not None:
                         frames.append(self.simulator.read_pixels())
