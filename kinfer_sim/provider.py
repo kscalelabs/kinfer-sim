@@ -189,16 +189,17 @@ class ModelProvider(ModelProviderABC):
         self.gyro_name = gyro_name
         self.arrays = {}
         self.key_queue = key_queue
+        self.command_array = np.zeros(6) # vx vy wz base_height roll pitch
         self.heading = 0.0
+        self.initialize_heading()
         return self
+
+    def initialize_heading(self):
+        quat = self.simulator._data.xquat[1]
+        self.heading = quat_to_euler(quat)[2]
     
     def process_key_queue(self):
-        if not hasattr(self, 'command_array'):
-            self.command_array = np.zeros(6) # vx vy wz base_height roll pitch
-            quat = self.simulator._data.xquat[1] # TODO HACK obs - need heading on real robot
-            self.heading = quat_to_euler(quat)[2]
-
-        # READ THE KEYS AND UDATE THE COMMAND ARRAY
+        # Read keystrokes and update command array
         while not self.key_queue.empty():
             key = self.key_queue.get()
             key = key.strip("'")
@@ -206,6 +207,7 @@ class ModelProvider(ModelProviderABC):
             # reset commands
             if key == '0' or key == 'key.backspace':
                 self.command_array *= 0
+                self.initialize_heading()
             
             # lin vel
             if key == 'w':

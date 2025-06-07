@@ -3,7 +3,6 @@
 import asyncio
 import itertools
 import logging
-import tarfile
 import time
 import traceback
 from pathlib import Path
@@ -12,6 +11,7 @@ from typing import Literal
 
 import colorlogging
 import numpy as np
+import tarfile
 import typed_argparse as tap
 from kinfer.rust_bindings import PyModelRunner, metadata_from_json
 from kmv.app.viewer import QtViewer
@@ -141,24 +141,23 @@ class SimulationServer:
         #             return
 
         #         expected = metadata.num_commands  # type: ignore[attr-defined]
-        #         actual = len(keyboard_state.value)
+        #         actual = len(model_provider.command_array)
         #         if actual != expected:
         #             raise ValueError(
-        #                 f"Command dimension mismatch: {type(keyboard_state).__name__} provides command"
+        #                 f"Command dimension mismatch: {type(model_provider).__name__} provides command"
         #                 f"with dim {actual} but model expects command with dim {expected}"
         #             )
 
         # except (tarfile.TarError, FileNotFoundError):
-        #     logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
+        #     logger.warning("Could not validate commandq dimension: unable to read kinfer file: %s", self._kinfer_path)
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
         start_time = time.perf_counter()
         last_fps_time = start_time
-        wall_time_for_next_step = start_time
-        ctrl_dt = 1.0 / self.simulator._control_frequency
         num_steps = 0
         fps_update_interval = 1.0  # Update FPS every second
+        ctrl_dt = 1.0 / self.simulator._control_frequency
 
         # Initialize the model runner on the simulator.
         model_provider = ModelProvider(
@@ -180,6 +179,8 @@ class SimulationServer:
 
         try:
             while not self._stop_event.is_set():
+                loop_start_time = time.perf_counter()
+                
                 # Shut down if the viewer is closed.
                 if isinstance(self.simulator._viewer, QtViewer):
                     if not self.simulator._viewer.is_open:
@@ -229,12 +230,12 @@ class SimulationServer:
                     num_steps = 0
                     last_fps_time = current_time
 
-                # Match the simulation time to the wall clock time.
+                # Sleep for the remaining time in this control step
                 if self._is_paused:
                     await asyncio.sleep(0.01)  # Small sleep to prevent UI blocking when paused
                 else:
-                    wall_time_for_next_step += ctrl_dt
-                    sleep_duration = max(0, wall_time_for_next_step - time.perf_counter())
+                    elapsed = time.perf_counter() - loop_start_time
+                    sleep_duration = max(0, ctrl_dt - elapsed)
                     await asyncio.sleep(sleep_duration)
 
         except Exception as e:
