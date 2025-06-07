@@ -10,10 +10,12 @@ from typing import Literal, NotRequired, TypedDict, TypeVar
 
 import mujoco
 import numpy as np
+from kmv.app.viewer import DefaultMujocoViewer, QtViewer
+from kmv.core.types import RenderMode
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from mujoco_scenes.mjcf import load_mjmodel
 
-from kinfer_sim.viewer import get_viewer
+from kinfer_sim.actuators import Actuator, ActuatorCommandDict, create_actuator
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +82,74 @@ def get_solver(solver: str) -> mujoco.mjtSolver:
             raise ValueError(f"Invalid solver: {solver}")
 
 
+def get_viewer(
+    mj_model: mujoco.MjModel,
+    render_with_glfw: bool,
+    render_width: int = 640,
+    render_height: int = 480,
+    render_distance: float = 3.5,
+    render_azimuth: float = 90.0,
+    render_elevation: float = -10.0,
+    render_lookat: tuple[float, float, float] = (0.0, 0.0, 0.5),
+    render_track_body_id: int | None = None,
+    render_camera_name: str | None = None,
+    render_shadow: bool = False,
+    render_reflection: bool = False,
+    render_contact_force: bool = False,
+    render_contact_point: bool = False,
+    render_inertia: bool = False,
+    mj_data: mujoco.MjData | None = None,
+    save_path: str | Path | None = None,
+    mode: RenderMode | None = None,
+) -> QtViewer | DefaultMujocoViewer:
+    if mode is None:
+        mode = "window" if save_path is None else "offscreen"
+
+    if (render_with_glfw := render_with_glfw) is None:
+        render_with_glfw = mode == "window"
+
+    viewer: QtViewer | DefaultMujocoViewer
+
+    if render_with_glfw:
+        viewer = QtViewer(
+            mj_model,
+            width=render_width,
+            height=render_height,
+            shadow=render_shadow,
+            reflection=render_reflection,
+            contact_force=render_contact_force,
+            contact_point=render_contact_point,
+            inertia=render_inertia,
+            enable_plots=True,
+            camera_distance=render_distance,
+            camera_azimuth=render_azimuth,
+            camera_elevation=render_elevation,
+            camera_lookat=render_lookat,
+            track_body_id=render_track_body_id,
+        )
+
+    else:
+        viewer = DefaultMujocoViewer(
+            mj_model,
+            width=render_width,
+            height=render_height,
+        )
+
+        # Sets the viewer camera.
+        viewer.cam.distance = render_distance
+        viewer.cam.azimuth = render_azimuth
+        viewer.cam.elevation = render_elevation
+        viewer.cam.lookat[:] = render_lookat
+        if render_track_body_id is not None:
+            viewer.cam.trackbodyid = render_track_body_id
+            viewer.cam.type = mujoco.mjtCamera.mjCAMERA_TRACKING
+
+        if render_camera_name is not None:
+            viewer.set_camera(render_camera_name)
+
+    return viewer
+
+
 class MujocoSimulator:
     def __init__(
         self,
@@ -96,7 +166,11 @@ class MujocoSimulator:
         joint_pos_delta_noise: float = 0.0,
         joint_pos_noise: float = 0.0,
         joint_vel_noise: float = 0.0,
-        pd_update_frequency: float = 100.0,
+        joint_zero_noise: float = 0.0,
+        accelerometer_noise: float = 0.0,
+        gyroscope_noise: float = 0.0,
+        projected_gravity_noise: float = 0.0,
+        pd_update_frequency: float = 1000.0,
         mujoco_scene: str = "smooth",
         integrator: str = "implicitfast",
         solver: str = "cg",
@@ -124,7 +198,12 @@ class MujocoSimulator:
         self._joint_pos_delta_noise = math.radians(joint_pos_delta_noise)
         self._joint_pos_noise = math.radians(joint_pos_noise)
         self._joint_vel_noise = math.radians(joint_vel_noise)
-        self._update_pd_delta = 1.0 / pd_update_frequency
+        self._joint_zero_noise = math.radians(joint_zero_noise)
+        self._accelerometer_noise = accelerometer_noise
+        self._gyroscope_noise = math.radians(gyroscope_noise)
+        self._projected_gravity_noise = projected_gravity_noise
+        self._update_pd_every_n_steps = max(1, int((1.0 / pd_update_frequency) / self._dt))
+        self._step = 0
         self._camera = camera
 
         # Gets the sim decimation.
@@ -138,20 +217,24 @@ class MujocoSimulator:
         if self._metadata.joint_name_to_metadata is None:
             raise ValueError("Joint name to metadata is not set")
 
-        # Gets the IDs, KPs, and KDs for each joint.
         self._joint_name_to_id = {name: _nn(joint.id) for name, joint in self._metadata.joint_name_to_metadata.items()}
-        self._joint_name_to_kp: dict[str, float] = {
-            name: float(_nn(joint.kp)) for name, joint in self._metadata.joint_name_to_metadata.items()
-        }
-        self._joint_name_to_kd: dict[str, float] = {
-            name: float(_nn(joint.kd)) for name, joint in self._metadata.joint_name_to_metadata.items()
-        }
-        self._joint_name_to_max_torque: dict[str, float] = {}
-
-        # Gets the inverse mapping.
         self._joint_id_to_name = {v: k for k, v in self._joint_name_to_id.items()}
         if len(self._joint_name_to_id) != len(self._joint_id_to_name):
             raise ValueError("Joint IDs are not unique!")
+
+        self._actuators: dict[int, Actuator] = {}
+        if self._metadata.actuator_type_to_metadata is None:
+            raise ValueError("Actuator metadata is missing")
+
+        for joint_name, joint_meta in self._metadata.joint_name_to_metadata.items():
+            joint_id = self._joint_name_to_id[joint_name]
+            act_type = joint_meta.actuator_type or "position"
+            act_meta = self._metadata.actuator_type_to_metadata.get(act_type)
+            self._actuators[joint_id] = create_actuator(
+                joint_meta,
+                act_meta,
+                dt=self._dt,
+            )
 
         # Chooses some random deltas for the joint positions.
         self._joint_name_to_pos_delta = {
@@ -167,6 +250,8 @@ class MujocoSimulator:
         self._model.opt.timestep = self._dt
         self._model.opt.integrator = get_integrator(integrator)
         self._model.opt.solver = get_solver(solver)
+
+        self._model.qpos0[:] = np.random.normal(0, self._joint_zero_noise) + self._model.qpos0
 
         self._data = mujoco.MjData(self._model)
 
@@ -231,7 +316,7 @@ class MujocoSimulator:
     async def step(self) -> None:
         """Execute one step of the simulation."""
         self._sim_time += self._dt
-
+        self._step += 1
         # Process commands that are ready to be applied
         commands_to_remove = []
         for name, (target_command, application_time) in self._next_commands.items():
@@ -246,33 +331,49 @@ class MujocoSimulator:
 
         mujoco.mj_forward(self._model, self._data)
 
-        # Sets the ctrl values from the current commands.
-        for name, target_command in self._current_commands.items():
-            joint = self._data.joint(name)
-            joint_id = self._joint_name_to_id[name]
+        prev_torque = self._data.ctrl[:]
+        for joint_name, target_command in self._current_commands.items():
+            joint = self._data.joint(joint_name)
+            joint_id = self._joint_name_to_id[joint_name]
             actuator_id = self._joint_id_to_actuator_id[joint_id]
-            kp = self._joint_name_to_kp[name]
-            kd = self._joint_name_to_kd[name]
-            target_torque = (
-                kp * (target_command.get("position", 0.0) - joint.qpos)
-                + kd * (target_command.get("velocity", 0.0) - joint.qvel)
-                + target_command.get("torque", 0.0)
-            )
-            if (max_torque := self._joint_name_to_max_torque.get(name)) is not None:
-                target_torque = np.clip(target_torque, -max_torque, max_torque)
-            logger.debug("Setting ctrl for actuator %s to %f", actuator_id, target_torque)
-            self._data.ctrl[actuator_id] = target_torque
+
+            actuator_command_dict: ActuatorCommandDict = target_command
+            if self._step % self._update_pd_every_n_steps == 0:
+                torque = self._actuators[joint_id].get_ctrl(
+                    actuator_command_dict,
+                    qpos=float(joint.qpos),
+                    qvel=float(joint.qvel),
+                    dt=self._dt,
+                )
+            else:
+                torque = prev_torque[actuator_id]
+
+            logger.debug("Setting ctrl for actuator %s to %f", actuator_id, torque)
+            self._data.ctrl[actuator_id] = torque
 
         mujoco.mj_forward(self._model, self._data)
         mujoco.mj_step(self._model, self._data)
 
+        if isinstance(self._viewer, QtViewer):
+            # Push physics state to the viewer.
+            self._viewer.push_state(
+                self._data.qpos,
+                self._data.qvel,
+                sim_time=float(self._data.time),
+            )
+
+            # Apply forces from the viewer.
+            xfrc = self._viewer.drain_control_pipe()
+            if xfrc is not None:
+                self._data.xfrc_applied[:] = xfrc
+
         return self._data
 
-    def render(self) -> None:
-        self._viewer.render()
-
     def read_pixels(self) -> np.ndarray:
-        return self._viewer.read_pixels()
+        if isinstance(self._viewer, DefaultMujocoViewer):
+            return self._viewer.read_pixels()
+        else:
+            raise RuntimeError("read_pixels() is only available with the DefaultMujocoViewer!")
 
     async def get_sensor_data(self, name: str) -> np.ndarray:
         """Get data from a named sensor."""
@@ -314,21 +415,19 @@ class MujocoSimulator:
 
             self._next_commands[joint_name] = (command, application_time)
 
-    async def configure_actuator(self, joint_id: int, configuration: ConfigureActuatorRequest) -> None:
-        """Configure an actuator using real joint ID."""
-        if joint_id not in self._joint_id_to_actuator_id:
-            raise KeyError(
-                f"Joint ID {joint_id} not found in config mappings. "
-                f"The available joint IDs are {self._joint_id_to_actuator_id.keys()}"
-            )
+    async def configure_actuator(
+        self,
+        joint_id: int,
+        configuration: ConfigureActuatorRequest,
+    ) -> None:
+        """Forward configuration dict to the actuator instance."""
+        if joint_id not in self._actuators:
+            raise KeyError(f"Joint ID {joint_id} does not have an actuator. Known IDs: {list(self._actuators)}")
 
-        joint_name = self._joint_id_to_name[joint_id]
-        if "kp" in configuration:
-            self._joint_name_to_kp[joint_name] = configuration["kp"]
-        if "kd" in configuration:
-            self._joint_name_to_kd[joint_name] = configuration["kd"]
-        if "max_torque" in configuration:
-            self._joint_name_to_max_torque[joint_name] = configuration["max_torque"]
+        # Keep only numeric fields (kp, kd, max_torque) and cast them to float
+        cfg: dict[str, float] = {k: float(v) for k, v in configuration.items() if isinstance(v, (int, float))}
+
+        self._actuators[joint_id].configure(**cfg)
 
     @property
     def sim_time(self) -> float:

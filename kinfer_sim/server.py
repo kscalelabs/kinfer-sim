@@ -3,15 +3,19 @@
 import asyncio
 import itertools
 import logging
+import tarfile
 import time
 import traceback
 from pathlib import Path
 from queue import Queue
+from typing import Literal
 
 import colorlogging
 import numpy as np
 import typed_argparse as tap
-from kinfer.rust_bindings import PyModelRunner
+from kinfer.rust_bindings import PyModelRunner, metadata_from_json
+from kmv.app.viewer import QtViewer
+from kmv.utils.logging import VideoWriter, save_logs
 from kscale import K
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
@@ -19,7 +23,6 @@ from kscale.web.utils import get_robots_dir, should_refresh_file
 from kinfer_sim.keyboard_listener import KeyboardListener
 from kinfer_sim.provider import ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
-from kinfer_sim.viewer import save_logs, save_video
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +38,7 @@ class ServerConfig(tap.TypedArgs):
 
     # Physics settings
     dt: float = tap.arg(default=0.0001, help="Simulation timestep")
+    pd_update_frequency: float = tap.arg(default=1000.0, help="PD update frequency for the actuators (Hz)")
     no_gravity: bool = tap.arg(default=False, help="Enable gravity")
     start_height: float = tap.arg(default=1.1, help="Start height")
     quat_name: str = tap.arg(default="imu_site_quat", help="Name of the quaternion sensor")
@@ -53,6 +57,7 @@ class ServerConfig(tap.TypedArgs):
 
     # Keyboard settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
+    command_type: Literal["joystick", "control_vector"] = tap.arg(default="joystick", help="Type of command to use")
 
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
@@ -61,6 +66,10 @@ class ServerConfig(tap.TypedArgs):
     joint_pos_delta_noise: float = tap.arg(default=0.0, help="Joint position delta noise (degrees)")
     joint_pos_noise: float = tap.arg(default=0.0, help="Joint position noise (degrees)")
     joint_vel_noise: float = tap.arg(default=0.0, help="Joint velocity noise (degrees/second)")
+    joint_zero_noise: float = tap.arg(default=0.0, help="Joint zero noise (degrees)")
+    accelerometer_noise: float = tap.arg(default=0.0, help="Accelerometer noise (m/s^2)")
+    gyroscope_noise: float = tap.arg(default=0.0, help="Gyroscope noise (rad/s)")
+    projected_gravity_noise: float = tap.arg(default=0.0, help="Projected gravity noise (m/s^2)")
 
 
 class SimulationServer:
@@ -86,6 +95,11 @@ class SimulationServer:
             joint_pos_delta_noise=config.joint_pos_delta_noise,
             joint_pos_noise=config.joint_pos_noise,
             joint_vel_noise=config.joint_vel_noise,
+            joint_zero_noise=config.joint_zero_noise,
+            accelerometer_noise=config.accelerometer_noise,
+            gyroscope_noise=config.gyroscope_noise,
+            projected_gravity_noise=config.projected_gravity_noise,
+            pd_update_frequency=config.pd_update_frequency,
             mujoco_scene=config.mujoco_scene,
             camera=config.camera,
             frame_width=config.frame_width,
@@ -94,7 +108,7 @@ class SimulationServer:
         self._kinfer_path = config.kinfer_path
         self._stop_event = asyncio.Event()
         self._step_lock = asyncio.Semaphore(1)
-        self._render_decimation = int(1.0 / config.render_frequency)
+        self._video_render_decimation = int(1.0 / config.render_frequency)
         self._quat_name = config.quat_name
         self._acc_name = config.acc_name
         self._gyro_name = config.gyro_name
@@ -106,22 +120,43 @@ class SimulationServer:
         self._pause_queue = pause_queue
         self._is_paused = False
 
-    async def _handle_pause(self) -> None:
-        """Handle pause state changes from the pause queue."""
-        if self._pause_queue is not None and not self._pause_queue.empty():
-            action = self._pause_queue.get()
-            if not self._is_paused:  # Pause
-                self._is_paused = True
-                logger.info("Simulation PAUSED")
-            else:  # Resume
-                self._is_paused = False
-                logger.info("Simulation RESUMED")
+        self._video_writer: VideoWriter | None = None
+        if self._save_video:
+            self._save_path.mkdir(parents=True, exist_ok=True)
+
+            fps = round(self.simulator._control_frequency)
+            self._video_writer = VideoWriter(self._save_path / "video.mp4", fps=fps)
+
+        # # Check command dimension matches model expectations
+        # try:
+        #     with tarfile.open(self._kinfer_path, "r:gz") as tar:
+        #         metadata_file = tar.extractfile("metadata.json")
+        #         if metadata_file is None:
+        #             logger.warning("Could not validate command dimension: metadata.json not found in kinfer file")
+        #             return
+
+        #         metadata = metadata_from_json(metadata_file.read().decode("utf-8"))
+        #         if metadata.num_commands is None:  # type: ignore[attr-defined]
+        #             logger.warning("Could not validate command dimension: num_commands not specified in model metadata")
+        #             return
+
+        #         expected = metadata.num_commands  # type: ignore[attr-defined]
+        #         actual = len(keyboard_state.value)
+        #         if actual != expected:
+        #             raise ValueError(
+        #                 f"Command dimension mismatch: {type(keyboard_state).__name__} provides command"
+        #                 f"with dim {actual} but model expects command with dim {expected}"
+        #             )
+
+        # except (tarfile.TarError, FileNotFoundError):
+        #     logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
-        start_time = time.time()
+        start_time = time.perf_counter()
         last_fps_time = start_time
-        num_renders = 0
+        wall_time_for_next_step = start_time
+        ctrl_dt = 1.0 / self.simulator._control_frequency
         num_steps = 0
         fps_update_interval = 1.0  # Update FPS every second
 
@@ -139,25 +174,27 @@ class SimulationServer:
 
         carry = model_runner.init()
 
-        frames: list[np.ndarray] | None = None
-        if self._save_video:
-            frames = []
-
         logs: list[dict[str, np.ndarray]] | None = None
         if self._save_logs:
             logs = []
 
         try:
             while not self._stop_event.is_set():
-                await self._handle_pause()
+                # Shut down if the viewer is closed.
+                if isinstance(self.simulator._viewer, QtViewer):
+                    if not self.simulator._viewer.is_open:
+                        break
 
-                # Always render and update UI even when paused
-                self.simulator.render()
-                num_renders += 1
+                # handle pause command
+                if self._pause_queue is not None and not self._pause_queue.empty():
+                    _ = self._pause_queue.get()
+                    self._is_paused = not self._is_paused
 
-                # Only simulate if not paused
+                # Only simulate step if not paused
                 if not self._is_paused:
                     model_provider.arrays.clear()
+
+                    # handle sim reset command
                     if self._reset_queue is not None and not self._reset_queue.empty():
                         await self.simulator.reset()
                         self._reset_queue.get()
@@ -167,56 +204,51 @@ class SimulationServer:
                         for _ in range(self.simulator._sim_decimation):
                             await self.simulator.step()
 
-                    # Offload blocking calls to the executor
+                    # Inference policy, offload blocking calls to the executor
                     output, carry = await loop.run_in_executor(None, model_runner.step, carry)
                     await loop.run_in_executor(None, model_runner.take_action, output)
-
-                    if frames is not None:
-                        frames.append(self.simulator.read_pixels())
 
                     if logs is not None:
                         logs.append(model_provider.arrays.copy())
 
+                    if self._video_writer is not None and num_steps % self._video_render_decimation == 0:
+                        self._video_writer.append(self.simulator.read_pixels())
+
                     num_steps += 1
 
                 # Calculate and log FPS
-                current_time = time.time()
+                current_time = time.perf_counter()
                 if current_time - last_fps_time >= fps_update_interval:
-                    fps = num_steps / (current_time - last_fps_time)
-                    render_fps = num_renders / (current_time - last_fps_time)
+                    physics_fps = num_steps / (current_time - last_fps_time)
                     logger.info(
-                        "FPS: %.2f, Render FPS: %.2f, Simulation time: %f",
-                        fps,
-                        render_fps,
-                        self.simulator._sim_time,
+                        "Physics FPS: %.2f, Simulation time: %.3f, Wall time: %.3f",
+                        physics_fps,
+                        self.simulator.sim_time,
+                        current_time,
                     )
                     num_steps = 0
-                    num_renders = 0
                     last_fps_time = current_time
 
-                # Sleep to maintain real-time simulation
-                if not self._is_paused:
-                    current_time = time.time()
-                    if current_time < self.simulator._sim_time:
-                        await asyncio.sleep(self.simulator._sim_time - current_time)
-
-                # Small sleep to prevent UI blocking when paused
+                # Match the simulation time to the wall clock time.
+                if self._is_paused:
+                    await asyncio.sleep(0.01)  # Small sleep to prevent UI blocking when paused
                 else:
-                    await asyncio.sleep(0.01)
+                    wall_time_for_next_step += ctrl_dt
+                    sleep_duration = max(0, wall_time_for_next_step - time.perf_counter())
+                    await asyncio.sleep(sleep_duration)
 
         except Exception as e:
             logger.error("Simulation loop failed: %s", e)
             logger.error("Traceback: %s", traceback.format_exc())
 
-            # Chop off the last frame, since it is sometimes corrupted.
-            if frames is not None and len(frames) > 1:
-                frames = frames[:-1]
-
         finally:
             await self.stop()
 
-            if frames is not None:
-                save_video(frames, self._save_path / "video.mp4", fps=round(self.simulator._control_frequency))
+            if self._video_writer is not None:
+                self._video_writer.close()
+
+            if isinstance(self.simulator._viewer, QtViewer):
+                self.simulator._viewer.close()
 
             if logs is not None:
                 save_logs(logs, self._save_path / "logs")
@@ -271,7 +303,6 @@ async def serve(config: ServerConfig) -> None:
     if config.use_keyboard:
         keyboard_listener = KeyboardListener()
         key_queue, reset_queue, pause_queue = keyboard_listener.get_queues()
-
 
     server = SimulationServer(
         model_path=model_path,
