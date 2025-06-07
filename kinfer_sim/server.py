@@ -232,7 +232,7 @@ class SimulationServer:
 
                 # Sleep for the remaining time in this control step
                 if self._is_paused:
-                    await asyncio.sleep(0.01)  # Small sleep to prevent UI blocking when paused
+                    await asyncio.sleep(0.01)
                 else:
                     elapsed = time.perf_counter() - loop_start_time
                     sleep_duration = max(0, ctrl_dt - elapsed)

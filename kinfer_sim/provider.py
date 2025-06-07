@@ -258,8 +258,10 @@ class ModelProvider(ModelProviderABC):
                 inputs[input_type] = self.get_joint_angles(metadata.joint_names)  # type: ignore[attr-defined]
             elif input_type == "joint_angular_velocities":
                 inputs[input_type] = self.get_joint_angular_velocities(metadata.joint_names)  # type: ignore[attr-defined]
-            elif input_type == "projected_gravity":
-                inputs[input_type] = self.get_projected_gravity()
+            elif input_type == "quaternion":
+                inputs[input_type] = self.get_quaternion()
+            # elif input_type == "projected_gravity":
+            #     inputs[input_type] = self.get_projected_gravity()
             elif input_type == "accelerometer":
                 inputs[input_type] = self.get_accelerometer()
             elif input_type == "gyroscope":
@@ -291,16 +293,27 @@ class ModelProvider(ModelProviderABC):
         self.arrays["joint_velocities"] = velocities_array
         return velocities_array
 
-    def get_projected_gravity(self) -> np.ndarray:
-        gravity = self.simulator._model.opt.gravity
-        quat_name = self.quat_name
-        sensor = self.simulator._data.sensor(quat_name)
-        proj_gravity = rotate_vector_by_quat(gravity, sensor.data, inverse=True)
-        proj_gravity += np.random.normal(
-            -self.simulator._projected_gravity_noise, self.simulator._projected_gravity_noise, proj_gravity.shape
+    # def get_projected_gravity(self) -> np.ndarray:
+    #     gravity = self.simulator._model.opt.gravity
+    #     quat_name = self.quat_name
+    #     sensor = self.simulator._data.sensor(quat_name)
+    #     proj_gravity = rotate_vector_by_quat(gravity, sensor.data, inverse=True)
+    #     proj_gravity += np.random.normal(
+    #         -self.simulator._projected_gravity_noise, self.simulator._projected_gravity_noise, proj_gravity.shape
+    #     )
+    #     self.arrays["projected_gravity"] = proj_gravity
+    #     return proj_gravity
+    
+    def get_quaternion(self) -> np.ndarray:
+        sensor = self.simulator._data.sensor(self.quat_name)
+        quat_array = np.array(sensor.data, dtype=np.float32)
+        quat_array += np.random.normal(
+            -self.simulator._quat_noise, self.simulator._quat_noise, quat_array.shape
         )
-        self.arrays["projected_gravity"] = proj_gravity
-        return proj_gravity
+        # backspin by heading
+        quat_array = rotate_quat(quat_array, euler_to_quat(np.array([0, 0, self.heading])), inverse=True)
+        self.arrays["quaternion"] = quat_array
+        return quat_array
 
     def get_accelerometer(self) -> np.ndarray:
         sensor = self.simulator._data.sensor(self.acc_name)
@@ -338,13 +351,13 @@ class ModelProvider(ModelProviderABC):
                         f"\033[35mbasepitch={self.command_array[5]:.2f}\033[0m")
 
         self.heading += self.command_array[2] * self.simulator._control_dt
-        inv_heading_quat = euler_to_quat(np.array([0, 0, -self.heading]))
-        quat = self.simulator._data.xquat[1]
-        quat = rotate_quat(quat, inv_heading_quat)
+        # inv_heading_quat = euler_to_quat(np.array([0, 0, -self.heading]))
+        # quat = self.simulator._data.xquat[1]
+        # quat = rotate_quat(quat, inv_heading_quat)
 
         command_obs = np.concatenate([
             self.command_array[:3],
-            quat, # TODO HACK obs - need heading on real robot
+            # quat, # TODO HACK obs - need heading on real robot
             np.zeros_like([self.heading]), # TODO i dont want to feed a useless 0 to model but training code has it
             self.command_array[3:],
         ])
