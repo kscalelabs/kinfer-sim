@@ -1,7 +1,6 @@
 """Defines a K-Infer model provider for the Mujoco simulator."""
 
 import logging
-from abc import ABC, abstractmethod
 from typing import Sequence, cast
 from queue import Queue
 
@@ -12,66 +11,6 @@ from kinfer_sim.simulator import MujocoSimulator
 
 logger = logging.getLogger(__name__)
 
-
-def rotate_vector_by_quat(vector: np.ndarray, quat: np.ndarray, inverse: bool = False, eps: float = 1e-6) -> np.ndarray:
-    """Rotates a vector by a quaternion.
-
-    Args:
-        vector: The vector to rotate, shape (*, 3).
-        quat: The quaternion to rotate by, shape (*, 4).
-        inverse: If True, rotate the vector by the conjugate of the quaternion.
-        eps: A small epsilon value to avoid division by zero.
-
-    Returns:
-        The rotated vector, shape (*, 3).
-    """
-    # Normalize quaternion
-    quat = quat / (np.linalg.norm(quat, axis=-1, keepdims=True) + eps)
-    w, x, y, z = np.split(quat, 4, axis=-1)
-
-    if inverse:
-        x, y, z = -x, -y, -z
-
-    # Extract vector components
-    vx, vy, vz = np.split(vector, 3, axis=-1)
-
-    # Terms for x component
-    xx = (
-        w * w * vx
-        + 2 * y * w * vz
-        - 2 * z * w * vy
-        + x * x * vx
-        + 2 * y * x * vy
-        + 2 * z * x * vz
-        - z * z * vx
-        - y * y * vx
-    )
-
-    # Terms for y component
-    yy = (
-        2 * x * y * vx
-        + y * y * vy
-        + 2 * z * y * vz
-        + 2 * w * z * vx
-        - z * z * vy
-        + w * w * vy
-        - 2 * w * x * vz
-        - x * x * vy
-    )
-
-    # Terms for z component
-    zz = (
-        2 * x * z * vx
-        + 2 * y * z * vy
-        + z * z * vz
-        - 2 * w * y * vx
-        + w * w * vz
-        + 2 * w * x * vy
-        - y * y * vz
-        - x * x * vz
-    )
-
-    return np.concatenate([xx, yy, zz], axis=-1)
 
 def euler_to_quat(euler_3: np.ndarray) -> np.ndarray:
     """Converts roll, pitch, yaw angles to a quaternion (w, x, y, z).
@@ -260,8 +199,6 @@ class ModelProvider(ModelProviderABC):
                 inputs[input_type] = self.get_joint_angular_velocities(metadata.joint_names)  # type: ignore[attr-defined]
             elif input_type == "quaternion":
                 inputs[input_type] = self.get_quaternion()
-            # elif input_type == "projected_gravity":
-            #     inputs[input_type] = self.get_projected_gravity()
             elif input_type == "accelerometer":
                 inputs[input_type] = self.get_accelerometer()
             elif input_type == "gyroscope":
@@ -293,25 +230,14 @@ class ModelProvider(ModelProviderABC):
         self.arrays["joint_velocities"] = velocities_array
         return velocities_array
 
-    # def get_projected_gravity(self) -> np.ndarray:
-    #     gravity = self.simulator._model.opt.gravity
-    #     quat_name = self.quat_name
-    #     sensor = self.simulator._data.sensor(quat_name)
-    #     proj_gravity = rotate_vector_by_quat(gravity, sensor.data, inverse=True)
-    #     proj_gravity += np.random.normal(
-    #         -self.simulator._projected_gravity_noise, self.simulator._projected_gravity_noise, proj_gravity.shape
-    #     )
-    #     self.arrays["projected_gravity"] = proj_gravity
-    #     return proj_gravity
-    
     def get_quaternion(self) -> np.ndarray:
         sensor = self.simulator._data.sensor(self.quat_name)
         quat_array = np.array(sensor.data, dtype=np.float32)
         quat_array += np.random.normal(
-            -self.simulator._quat_noise, self.simulator._quat_noise, quat_array.shape
+            -self.simulator._imu_quat_noise, self.simulator._imu_quat_noise, quat_array.shape
         )
         # backspin by heading
-        quat_array = rotate_quat(quat_array, euler_to_quat(np.array([0, 0, self.heading])), inverse=True)
+        quat_array = rotate_quat(quat_array, euler_to_quat(np.array([0, 0, -self.heading])))
         self.arrays["quaternion"] = quat_array
         return quat_array
 
@@ -341,8 +267,9 @@ class ModelProvider(ModelProviderABC):
 
     def get_command(self) -> np.ndarray:
         # Process any queued keyboard commands
-        if self.key_queue is not None: # TODO this here??
+        if self.key_queue is not None: 
             self.process_key_queue()
+            # TODO move cmd printing to kmv
             logging.info(f"Command: \033[31mVx={self.command_array[0]:.2f}\033[0m, "
                         f"\033[32mVy={self.command_array[1]:.2f}\033[0m, "
                         f"\033[33mωz={self.command_array[2]:.2f}\033[0m, "
@@ -351,14 +278,10 @@ class ModelProvider(ModelProviderABC):
                         f"\033[35mbasepitch={self.command_array[5]:.2f}\033[0m")
 
         self.heading += self.command_array[2] * self.simulator._control_dt
-        # inv_heading_quat = euler_to_quat(np.array([0, 0, -self.heading]))
-        # quat = self.simulator._data.xquat[1]
-        # quat = rotate_quat(quat, inv_heading_quat)
 
         command_obs = np.concatenate([
             self.command_array[:3],
-            # quat, # TODO HACK obs - need heading on real robot
-            np.zeros_like([self.heading]), # TODO i dont want to feed a useless 0 to model but training code has it
+            np.zeros_like([self.heading]), # mask out carried heading
             self.command_array[3:],
         ])
 

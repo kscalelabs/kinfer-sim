@@ -169,7 +169,7 @@ class MujocoSimulator:
         joint_zero_noise: float = 0.0,
         accelerometer_noise: float = 0.0,
         gyroscope_noise: float = 0.0,
-        projected_gravity_noise: float = 0.0,
+        imu_quat_noise: float = 0.0,
         pd_update_frequency: float = 1000.0,
         mujoco_scene: str = "smooth",
         integrator: str = "implicitfast",
@@ -201,7 +201,7 @@ class MujocoSimulator:
         self._joint_zero_noise = math.radians(joint_zero_noise)
         self._accelerometer_noise = accelerometer_noise
         self._gyroscope_noise = math.radians(gyroscope_noise)
-        self._projected_gravity_noise = projected_gravity_noise
+        self._imu_quat_noise = imu_quat_noise
         self._update_pd_every_n_steps = max(1, int((1.0 / pd_update_frequency) / self._dt))
         self._step = 0
         self._camera = camera
