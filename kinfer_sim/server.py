@@ -3,16 +3,16 @@
 import asyncio
 import itertools
 import logging
-import tarfile
 import time
 import traceback
 from pathlib import Path
+from queue import Queue
 from typing import Literal
 
 import colorlogging
 import numpy as np
+import tarfile
 import typed_argparse as tap
-from askin import KeyboardController
 from kinfer.rust_bindings import PyModelRunner, metadata_from_json
 from kmv.app.viewer import QtViewer
 from kmv.utils.logging import VideoWriter, save_logs
@@ -20,7 +20,8 @@ from kscale import K
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
-from kinfer_sim.provider import ControlVectorInputState, InputState, JoystickInputState, ModelProvider
+from kinfer_sim.keyboard_listener import KeyboardListener
+from kinfer_sim.provider import ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
 
 logger = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ class ServerConfig(tap.TypedArgs):
     save_video: bool = tap.arg(default=False, help="Save video")
     save_logs: bool = tap.arg(default=False, help="Save logs")
 
-    # Model settings
+    # Keyboard settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
     command_type: Literal["joystick", "control_vector"] = tap.arg(default="joystick", help="Type of command to use")
 
@@ -68,7 +69,7 @@ class ServerConfig(tap.TypedArgs):
     joint_zero_noise: float = tap.arg(default=0.0, help="Joint zero noise (degrees)")
     accelerometer_noise: float = tap.arg(default=0.0, help="Accelerometer noise (m/s^2)")
     gyroscope_noise: float = tap.arg(default=0.0, help="Gyroscope noise (rad/s)")
-    projected_gravity_noise: float = tap.arg(default=0.0, help="Projected gravity noise (m/s^2)")
+    imu_quat_noise: float = tap.arg(default=0.0, help="IMU quaternion noise")
 
 
 class SimulationServer:
@@ -77,7 +78,9 @@ class SimulationServer:
         model_path: str | Path,
         model_metadata: RobotURDFMetadataOutput,
         config: ServerConfig,
-        keyboard_state: InputState,
+        key_queue: Queue | None,
+        reset_queue: Queue | None,
+        pause_queue: Queue | None,
     ) -> None:
         self.simulator = MujocoSimulator(
             model_path=model_path,
@@ -95,7 +98,7 @@ class SimulationServer:
             joint_zero_noise=config.joint_zero_noise,
             accelerometer_noise=config.accelerometer_noise,
             gyroscope_noise=config.gyroscope_noise,
-            projected_gravity_noise=config.projected_gravity_noise,
+            imu_quat_noise=config.imu_quat_noise,
             pd_update_frequency=config.pd_update_frequency,
             mujoco_scene=config.mujoco_scene,
             camera=config.camera,
@@ -112,7 +115,10 @@ class SimulationServer:
         self._save_path = Path(config.save_path).expanduser().resolve()
         self._save_video = config.save_video
         self._save_logs = config.save_logs
-        self._keyboard_state = keyboard_state
+        self._key_queue = key_queue
+        self._reset_queue = reset_queue
+        self._pause_queue = pause_queue
+        self._is_paused = False
 
         self._video_writer: VideoWriter | None = None
         if self._save_video:
@@ -121,38 +127,37 @@ class SimulationServer:
             fps = round(self.simulator._control_frequency)
             self._video_writer = VideoWriter(self._save_path / "video.mp4", fps=fps)
 
-        # Check command dimension matches model expectations
-        try:
-            with tarfile.open(self._kinfer_path, "r:gz") as tar:
-                metadata_file = tar.extractfile("metadata.json")
-                if metadata_file is None:
-                    logger.warning("Could not validate command dimension: metadata.json not found in kinfer file")
-                    return
+        # # Check command dimension matches model expectations
+        # try:
+        #     with tarfile.open(self._kinfer_path, "r:gz") as tar:
+        #         metadata_file = tar.extractfile("metadata.json")
+        #         if metadata_file is None:
+        #             logger.warning("Could not validate command dimension: metadata.json not found in kinfer file")
+        #             return
 
-                metadata = metadata_from_json(metadata_file.read().decode("utf-8"))
-                if metadata.num_commands is None:  # type: ignore[attr-defined]
-                    logger.warning("Could not validate command dimension: num_commands not specified in model metadata")
-                    return
+        #         metadata = metadata_from_json(metadata_file.read().decode("utf-8"))
+        #         if metadata.num_commands is None:  # type: ignore[attr-defined]
+        #             logger.warning("Could not validate command dimension: num_commands not specified in model metadata")
+        #             return
 
-                expected = metadata.num_commands  # type: ignore[attr-defined]
-                actual = len(keyboard_state.value)
-                if actual != expected:
-                    raise ValueError(
-                        f"Command dimension mismatch: {type(keyboard_state).__name__} provides command"
-                        f"with dim {actual} but model expects command with dim {expected}"
-                    )
+        #         expected = metadata.num_commands  # type: ignore[attr-defined]
+        #         actual = len(model_provider.command_array)
+        #         if actual != expected:
+        #             raise ValueError(
+        #                 f"Command dimension mismatch: {type(model_provider).__name__} provides command"
+        #                 f"with dim {actual} but model expects command with dim {expected}"
+        #             )
 
-        except (tarfile.TarError, FileNotFoundError):
-            logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
+        # except (tarfile.TarError, FileNotFoundError):
+        #     logger.warning("Could not validate commandq dimension: unable to read kinfer file: %s", self._kinfer_path)
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
         start_time = time.perf_counter()
         last_fps_time = start_time
-        wall_time_for_next_step = start_time
-        ctrl_dt = 1.0 / self.simulator._control_frequency
         num_steps = 0
         fps_update_interval = 1.0  # Update FPS every second
+        ctrl_dt = 1.0 / self.simulator._control_frequency
 
         # Initialize the model runner on the simulator.
         model_provider = ModelProvider(
@@ -160,7 +165,7 @@ class SimulationServer:
             quat_name=self._quat_name,
             acc_name=self._acc_name,
             gyro_name=self._gyro_name,
-            keyboard_state=self._keyboard_state,
+            key_queue=self._key_queue,
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
 
@@ -174,32 +179,44 @@ class SimulationServer:
 
         try:
             while not self._stop_event.is_set():
-                model_provider.arrays.clear()
-
-                # Runs the simulation for one step.
-                async with self._step_lock:
-                    for _ in range(self.simulator._sim_decimation):
-                        await self.simulator.step()
-
+                loop_start_time = time.perf_counter()
+                
                 # Shut down if the viewer is closed.
                 if isinstance(self.simulator._viewer, QtViewer):
                     if not self.simulator._viewer.is_open:
                         break
 
-                # Offload blocking calls to the executor
-                output, carry = await loop.run_in_executor(None, model_runner.step, carry)
-                await loop.run_in_executor(None, model_runner.take_action, output)
+                # handle pause command
+                if self._pause_queue is not None and not self._pause_queue.empty():
+                    _ = self._pause_queue.get()
+                    self._is_paused = not self._is_paused
 
-                num_steps += 1
-                if logs is not None:
-                    logs.append(model_provider.arrays.copy())
+                # Only simulate step if not paused
+                if not self._is_paused:
+                    model_provider.arrays.clear()
 
-                if self._video_writer is not None and num_steps % self._video_render_decimation == 0:
-                    self._video_writer.append(self.simulator.read_pixels())
+                    # handle sim reset command
+                    if self._reset_queue is not None and not self._reset_queue.empty():
+                        await self.simulator.reset()
+                        carry = model_runner.init()
+                        self._reset_queue.get()
 
-                # Match the simulation time to the wall clock time.
-                wall_time_for_next_step += ctrl_dt
-                await asyncio.sleep(max(0, wall_time_for_next_step - time.perf_counter()))
+                    # Runs the simulation for one step.
+                    async with self._step_lock:
+                        for _ in range(self.simulator._sim_decimation):
+                            await self.simulator.step()
+
+                    # Inference policy, offload blocking calls to the executor
+                    output, carry = await loop.run_in_executor(None, model_runner.step, carry)
+                    await loop.run_in_executor(None, model_runner.take_action, output)
+
+                    if logs is not None:
+                        logs.append(model_provider.arrays.copy())
+
+                    if self._video_writer is not None and num_steps % self._video_render_decimation == 0:
+                        self._video_writer.append(self.simulator.read_pixels())
+
+                    num_steps += 1
 
                 # Calculate and log FPS
                 current_time = time.perf_counter()
@@ -213,6 +230,14 @@ class SimulationServer:
                     )
                     num_steps = 0
                     last_fps_time = current_time
+
+                # Sleep for the remaining time in this control step
+                if self._is_paused:
+                    await asyncio.sleep(0.01)
+                else:
+                    elapsed = time.perf_counter() - loop_start_time
+                    sleep_duration = max(0, ctrl_dt - elapsed)
+                    await asyncio.sleep(sleep_duration)
 
         except Exception as e:
             logger.error("Simulation loop failed: %s", e)
@@ -276,36 +301,18 @@ async def serve(config: ServerConfig) -> None:
         )
     )
 
-    key_state: InputState
-
-    if config.command_type == "joystick":
-        key_state = JoystickInputState()
-    elif config.command_type == "control_vector":
-        key_state = ControlVectorInputState()
-    else:
-        raise ValueError(f"Invalid command type: {config.command_type}")
-
+    key_queue, reset_queue, pause_queue = None, None, None
     if config.use_keyboard:
-
-        async def key_handler(key: str) -> None:
-            await key_state.update(key)
-
-        if config.command_type == "joystick":
-
-            async def default() -> None:
-                key_state.value = [1, 0, 0, 0, 0, 0, 0]
-
-            keyboard_controller = KeyboardController(key_handler, default=default)
-        elif config.command_type == "control_vector":
-            keyboard_controller = KeyboardController(key_handler)
-
-        await keyboard_controller.start()
+        keyboard_listener = KeyboardListener()
+        key_queue, reset_queue, pause_queue = keyboard_listener.get_queues()
 
     server = SimulationServer(
         model_path=model_path,
         model_metadata=model_metadata,
         config=config,
-        keyboard_state=key_state,
+        key_queue=key_queue,
+        reset_queue=reset_queue,
+        pause_queue=pause_queue,
     )
 
     await server.start()
