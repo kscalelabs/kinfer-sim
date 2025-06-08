@@ -198,6 +198,7 @@ class SimulationServer:
                     # handle sim reset command
                     if self._reset_queue is not None and not self._reset_queue.empty():
                         await self.simulator.reset()
+                        carry = model_runner.init()
                         self._reset_queue.get()
 
                     # Runs the simulation for one step.

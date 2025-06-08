@@ -12,6 +12,11 @@ from kinfer_sim.simulator import MujocoSimulator
 logger = logging.getLogger(__name__)
 
 
+def ensure_quat_in_positive_hemisphere(quat_4: np.ndarray) -> np.ndarray:
+    """Ensures a quaternion is in the positive hemisphere of the quaternion space."""
+    return np.where(quat_4[..., 0] < 0, -quat_4, quat_4)
+
+
 def euler_to_quat(euler_3: np.ndarray) -> np.ndarray:
     """Converts roll, pitch, yaw angles to a quaternion (w, x, y, z).
 
@@ -46,25 +51,45 @@ def euler_to_quat(euler_3: np.ndarray) -> np.ndarray:
 
     return quat
 
-def rotate_quat(q1, q2):
-    """Rotate quaternion q1 by quaternion q2.
+
+def rotate_quat_by_quat(quat_to_rotate: np.ndarray, rotating_quat: np.ndarray, inverse: bool = False, eps: float = 1e-6) -> np.ndarray:
+    """Rotates one quaternion by another quaternion through quaternion multiplication.
+    
+    This performs the operation: rotating_quat * quat_to_rotate * rotating_quat^(-1) if inverse=False
+    or rotating_quat^(-1) * quat_to_rotate * rotating_quat if inverse=True
     
     Args:
-        q1: quaternion to be rotated [w, x, y, z]
-        q2: quaternion to rotate by [w, x, y, z]
-    
+        quat_to_rotate: The quaternion being rotated (w,x,y,z), shape (*, 4)
+        rotating_quat: The quaternion performing the rotation (w,x,y,z), shape (*, 4)
+        inverse: If True, rotate by the inverse of rotating_quat
+        eps: Small epsilon value to avoid division by zero in normalization
+        
     Returns:
-        rotated quaternion [w, x, y, z]
+        The rotated quaternion (w,x,y,z), shape (*, 4)
     """
-    w1, x1, y1, z1 = q1
-    w2, x2, y2, z2 = q2
+    # Normalize both quaternions
+    quat_to_rotate = quat_to_rotate / (np.linalg.norm(quat_to_rotate, axis=-1, keepdims=True) + eps)
+    rotating_quat = rotating_quat / (np.linalg.norm(rotating_quat, axis=-1, keepdims=True) + eps)
     
-    return np.array([
-        w1*w2 - x1*x2 - y1*y2 - z1*z2,  # w
-        w1*x2 + x1*w2 + y1*z2 - z1*y2,  # x
-        w1*y2 - x1*z2 + y1*w2 + z1*x2,  # y
-        w1*z2 + x1*y2 - y1*x2 + z1*w2   # z
-    ])
+    # If inverse requested, conjugate the rotating quaternion (negate x,y,z components)
+    if inverse:
+        rotating_quat = np.concatenate([rotating_quat[..., :1], -rotating_quat[..., 1:]], axis=-1)
+    
+    # Extract components of both quaternions
+    w1, x1, y1, z1 = np.split(rotating_quat, 4, axis=-1)        # rotating quaternion 
+    w2, x2, y2, z2 = np.split(quat_to_rotate, 4, axis=-1)      # quaternion being rotated
+    
+    # Quaternion multiplication formula
+    w = w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2
+    x = w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2
+    y = w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2
+    z = w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2
+    
+    result = np.concatenate([w, x, y, z], axis=-1)
+    
+    # Normalize result
+    return result / (np.linalg.norm(result, axis=-1, keepdims=True) + eps)
+
 
 def quat_to_euler(quat_4: np.ndarray, eps: float = 1e-6) -> np.ndarray:
     """Normalizes and converts a quaternion (w, x, y, z) to roll, pitch, yaw.
@@ -126,13 +151,8 @@ class ModelProvider(ModelProviderABC):
         self.arrays = {}
         self.key_queue = key_queue
         self.command_array = np.zeros(6) # vx vy wz base_height roll pitch
-        self.heading = 0.0
-        self.initialize_heading()
+        self.heading = None
         return self
-
-    def initialize_heading(self):
-        quat = self.simulator._data.xquat[1]
-        self.heading = quat_to_euler(quat)[2]
     
     def process_key_queue(self):
         # Read keystrokes and update command array
@@ -141,38 +161,40 @@ class ModelProvider(ModelProviderABC):
             key = key.strip("'")
 
             # reset commands
-            if key == '0' or key == 'key.backspace':
+            if key == '0':
                 self.command_array *= 0
-                self.initialize_heading()
+            elif key == 'key.backspace':
+                self.command_array *= 0
+                self.heading = None # lazy init this to prevent timing issues
             
             # lin vel
-            if key == 'w':
+            elif key == 'w':
                 self.command_array[0] += 0.1
             elif key == 's':
                 self.command_array[0] -= 0.1
-            if key == 'a':
+            elif key == 'a':
                 self.command_array[1] += 0.1
             elif key == 'd':
                 self.command_array[1] -= 0.1
 
             # ang vel
-            if key == 'q':
+            elif key == 'q':
                 self.command_array[2] += 0.1
             elif key == 'e':
                 self.command_array[2] -= 0.1
 
             # height
-            if key == '=':
+            elif key == '=':
                 self.command_array[3] += 0.1
             elif key == '-':
                 self.command_array[3] -= 0.1
             
             # base orient
-            if key == 'r':
+            elif key == 'r':
                 self.command_array[4] += 0.1
             elif key == 'f':
                 self.command_array[4] -= 0.1
-            if key == 't':
+            elif key == 't':
                 self.command_array[5] += 0.1
             elif key == 'g':
                 self.command_array[5] -= 0.1
@@ -230,11 +252,18 @@ class ModelProvider(ModelProviderABC):
     def get_quaternion(self) -> np.ndarray:
         sensor = self.simulator._data.sensor(self.quat_name)
         quat_array = np.array(sensor.data, dtype=np.float32)
+
+        if self.heading == None: # lazy init heading after we are sure sim has been reset
+            self.heading = quat_to_euler(quat_array)[2]
+
         quat_array += np.random.normal(
             -self.simulator._imu_quat_noise, self.simulator._imu_quat_noise, quat_array.shape
         )
+
         # backspin by heading
-        quat_array = rotate_quat(quat_array, euler_to_quat(np.array([0, 0, -self.heading])))
+        heading_quat = euler_to_quat(np.array([0, 0, self.heading]))
+        quat_array = rotate_quat_by_quat(quat_array, heading_quat, inverse=True)
+        quat_array = ensure_quat_in_positive_hemisphere(quat_array)
         self.arrays["quaternion"] = quat_array
         return quat_array
 
@@ -274,11 +303,12 @@ class ModelProvider(ModelProviderABC):
                         f"\033[36mbaseroll={self.command_array[4]:.2f}\033[0m, "
                         f"\033[35mbasepitch={self.command_array[5]:.2f}\033[0m")
 
-        self.heading += self.command_array[2] * self.simulator._control_dt
+        if self.heading is not None:
+            self.heading += self.command_array[2] * self.simulator._control_dt
 
         command_obs = np.concatenate([
             self.command_array[:3],
-            np.zeros_like([self.heading]), # mask out carried heading
+            np.zeros(1), # mask out carried heading
             self.command_array[3:],
         ])
 
