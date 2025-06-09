@@ -12,6 +12,44 @@ from kinfer_sim.simulator import MujocoSimulator
 logger = logging.getLogger(__name__)
 
 
+def quat_to_euler(quat: np.ndarray) -> np.ndarray:
+    """Converts a quaternion to Euler angles.
+
+    Args:
+        quat: The quaternion to convert, shape (*, 4).
+
+    Returns:
+        The Euler angles, shape (*, 3).
+    """
+    eps: float = 1e-6  # small epsilon to avoid division by zero and NaNs
+
+    # Ensure numpy array and normalize the quaternion to unit length
+    quat = np.asarray(quat, dtype=np.float64)
+    quat = quat / (np.linalg.norm(quat, axis=-1, keepdims=True) + eps)
+
+    # Split into components (expects quaternion in (w, x, y, z) order)
+    w, x, y, z = np.split(quat, 4, axis=-1)
+
+    # Roll (x-axis rotation)
+    sinr_cosp = 2.0 * (w * x + y * z)
+    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
+    roll = np.arctan2(sinr_cosp, cosr_cosp)
+
+    # Pitch (y-axis rotation)
+    sinp = 2.0 * (w * y - z * x)
+    sinp = np.clip(sinp, -1.0 + eps, 1.0 - eps)  # numerical safety
+    pitch = np.arcsin(sinp)
+
+    # Yaw (z-axis rotation)
+    siny_cosp = 2.0 * (w * z + x * y)
+    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
+    yaw = np.arctan2(siny_cosp, cosy_cosp)
+
+    # Concatenate along the last dimension to maintain input shape semantics
+    euler = np.concatenate([roll, pitch, yaw], axis=-1)
+    return euler.astype(np.float32)
+
+
 def rotate_vector_by_quat(vector: np.ndarray, quat: np.ndarray, inverse: bool = False, eps: float = 1e-6) -> np.ndarray:
     """Rotates a vector by a quaternion.
 
@@ -107,6 +145,25 @@ class JoystickInputState(InputState):
             self.value = [0, 0, 0, 0, 1, 0, 0]
 
 
+class SimpleJoystickInputState(InputState):
+    """State to hold and modify commands based on simple joystick input."""
+
+    value: list[float]
+
+    def __init__(self) -> None:
+        self.value = [1, 0, 0, 0]
+
+    async def update(self, key: str) -> None:
+        if key == "w":
+            self.value = [0, 1, 0, 0]
+        elif key == "s":
+            self.value = [1, 0, 0, 0]
+        elif key == "a":
+            self.value = [0, 0, 0, 1]
+        elif key == "d":
+            self.value = [0, 0, 1, 0]
+
+
 class ControlVectorInputState(InputState):
     """State to hold and modify control vector commands based on keyboard input."""
 
@@ -162,6 +219,7 @@ class ModelProvider(ModelProviderABC):
     gyro_name: str
     arrays: dict[str, np.ndarray]
     keyboard_state: InputState
+    initial_heading: float
 
     def __new__(
         cls,
@@ -178,6 +236,7 @@ class ModelProvider(ModelProviderABC):
         self.gyro_name = gyro_name
         self.arrays = {}
         self.keyboard_state = keyboard_state
+        self.initial_heading = quat_to_euler(self.simulator._data.sensor(self.quat_name).data)[2]
         return self
 
     def get_inputs(self, input_types: Sequence[str], metadata: PyModelMetadata) -> dict[str, np.ndarray]:
@@ -198,7 +257,7 @@ class ModelProvider(ModelProviderABC):
             elif input_type == "joint_angular_velocities":
                 inputs[input_type] = self.get_joint_angular_velocities(metadata.joint_names)  # type: ignore[attr-defined]
             elif input_type == "initial_heading":
-                inputs[input_type] = np.zeros(1)
+                inputs[input_type] = np.array([self.initial_heading])
             elif input_type == "quaternion":
                 inputs[input_type] = self.get_quaternion()
             elif input_type == "projected_gravity":
@@ -237,6 +296,7 @@ class ModelProvider(ModelProviderABC):
         quat_name = self.quat_name
         sensor = self.simulator._data.sensor(quat_name)
         quat = sensor.data
+        # quat = np.array([quat[3], quat[0], quat[1], quat[2]], dtype=np.float32)
         self.arrays["quaternion"] = quat
         return quat
 
@@ -277,6 +337,7 @@ class ModelProvider(ModelProviderABC):
     def get_command(self) -> np.ndarray:
         command_array = np.array(self.keyboard_state.value, dtype=np.float32)
         self.arrays["command"] = command_array
+        # logger.info(f"Command: {command_array}")
         return command_array
 
     def take_action(self, action: np.ndarray, metadata: PyModelMetadata) -> None:

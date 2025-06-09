@@ -26,6 +26,7 @@ from kinfer_sim.provider import (
     InputState,
     JoystickInputState,
     ModelProvider,
+    SimpleJoystickInputState,
 )
 from kinfer_sim.simulator import MujocoSimulator
 
@@ -62,7 +63,7 @@ class ServerConfig(tap.TypedArgs):
 
     # Model settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
-    command_type: Literal["joystick", "control_vector", "expanded_control_vector"] = tap.arg(
+    command_type: Literal["joystick", "simple_joystick", "control_vector", "expanded_control_vector"] = tap.arg(
         default="expanded_control_vector", help="Type of command to use"
     )
 
@@ -288,6 +289,8 @@ async def serve(config: ServerConfig) -> None:
 
     if config.command_type == "joystick":
         key_state = JoystickInputState()
+    elif config.command_type == "simple_joystick":
+        key_state = SimpleJoystickInputState()
     elif config.command_type == "control_vector":
         key_state = ControlVectorInputState()
     elif config.command_type == "expanded_control_vector":
@@ -300,10 +303,19 @@ async def serve(config: ServerConfig) -> None:
         async def key_handler(key: str) -> None:
             await key_state.update(key)
 
-        if config.command_type == "joystick":
+        if config.command_type in ["joystick", "simple_joystick"]:
+            if config.command_type == "joystick":
 
-            async def default() -> None:
-                key_state.value = [1, 0, 0, 0, 0, 0, 0]
+                async def default() -> None:
+                    key_state.value = [1, 0, 0, 0, 0, 0, 0]
+
+            elif config.command_type == "simple_joystick":
+
+                async def default() -> None:
+                    key_state.value = [1, 0, 0, 0]
+
+            else:
+                raise ValueError(f"Invalid command type: {config.command_type}")
 
             keyboard_controller = KeyboardController(key_handler, default=default)
         elif config.command_type in ["control_vector", "expanded_control_vector"]:
