@@ -320,7 +320,7 @@ async def serve(config: ServerConfig) -> None:
 
             case "control_vector":
                 keyboard_controller = KeyboardController(key_handler)
-            
+
             case "expanded_control_vector":
                 keyboard_controller = KeyboardController(key_handler)
 
