@@ -210,6 +210,14 @@ class ExpandedControlVectorInputState(InputState):
             self.value[2] -= self.STEP_SIZE
         elif key == "e":
             self.value[2] += self.STEP_SIZE
+        elif key == "r":
+            self.value[4] += self.STEP_SIZE
+        elif key == "f":
+            self.value[4] -= self.STEP_SIZE
+        elif key == "t":
+            self.value[5] += self.STEP_SIZE
+        elif key == "g":
+            self.value[5] -= self.STEP_SIZE
 
 
 class ModelProvider(ModelProviderABC):
