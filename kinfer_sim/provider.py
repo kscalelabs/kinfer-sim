@@ -107,6 +107,25 @@ class JoystickInputState(InputState):
             self.value = [0, 0, 0, 0, 1, 0, 0]
 
 
+class SimpleJoystickInputState(InputState):
+    """State to hold and modify commands based on simple joystick input."""
+
+    value: list[float]
+
+    def __init__(self) -> None:
+        self.value = [1, 0, 0, 0]
+
+    async def update(self, key: str) -> None:
+        if key == "w":
+            self.value = [0, 1, 0, 0]
+        elif key == "s":
+            self.value = [0, 0, 1, 0]
+        elif key == "a":
+            self.value = [0, 0, 0, 1]
+        elif key == "d":
+            self.value = [1, 0, 0, 0]
+
+
 class ControlVectorInputState(InputState):
     """State to hold and modify control vector commands based on keyboard input."""
 
