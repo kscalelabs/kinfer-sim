@@ -62,7 +62,9 @@ class ServerConfig(tap.TypedArgs):
 
     # Model settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
-    command_type: Literal["joystick", "simple_joystick", "control_vector"] = tap.arg(default="joystick", help="Type of command to use")
+    command_type: Literal["joystick", "simple_joystick", "control_vector"] = tap.arg(
+        default="joystick", help="Type of command to use"
+    )
 
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
@@ -308,6 +310,7 @@ async def serve(config: ServerConfig) -> None:
                 keyboard_controller = KeyboardController(key_handler, default=default)
 
             case "simple_joystick":
+
                 async def default() -> None:
                     key_state.value = [1, 0, 0, 0]
 
