@@ -157,11 +157,11 @@ class SimpleJoystickInputState(InputState):
         if key == "w":
             self.value = [0, 1, 0, 0]
         elif key == "s":
-            self.value = [1, 0, 0, 0]
+            self.value = [0, 0, 1, 0]
         elif key == "a":
             self.value = [0, 0, 0, 1]
         elif key == "d":
-            self.value = [0, 0, 1, 0]
+            self.value = [1, 0, 0, 0]
 
 
 class ControlVectorInputState(InputState):

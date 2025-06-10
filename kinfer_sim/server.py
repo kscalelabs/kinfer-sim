@@ -303,23 +303,29 @@ async def serve(config: ServerConfig) -> None:
         async def key_handler(key: str) -> None:
             await key_state.update(key)
 
-        if config.command_type in ["joystick", "simple_joystick"]:
-            if config.command_type == "joystick":
+        match config.command_type:
+            case "joystick":
 
                 async def default() -> None:
                     key_state.value = [1, 0, 0, 0, 0, 0, 0]
 
-            elif config.command_type == "simple_joystick":
+                keyboard_controller = KeyboardController(key_handler, default=default)
+
+            case "simple_joystick":
 
                 async def default() -> None:
                     key_state.value = [1, 0, 0, 0]
 
-            else:
-                raise ValueError(f"Invalid command type: {config.command_type}")
+                keyboard_controller = KeyboardController(key_handler, default=default)
 
-            keyboard_controller = KeyboardController(key_handler, default=default)
-        elif config.command_type in ["control_vector", "expanded_control_vector"]:
-            keyboard_controller = KeyboardController(key_handler)
+            case "control_vector":
+                keyboard_controller = KeyboardController(key_handler)
+            
+            case "expanded_control_vector":
+                keyboard_controller = KeyboardController(key_handler)
+
+            case _:
+                raise ValueError(f"Invalid command type: {config.command_type}")
 
         await keyboard_controller.start()
 
