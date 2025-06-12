@@ -7,7 +7,7 @@ import tarfile
 import time
 import traceback
 from pathlib import Path
-from typing import Literal
+from typing import Awaitable, Callable, Literal
 
 import colorlogging
 import numpy as np
@@ -21,8 +21,10 @@ from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
 from kinfer_sim.provider import (
+    CombinedInputState,
     ControlVectorInputState,
     ExpandedControlVectorInputState,
+    GenericOHEInputState,
     InputState,
     JoystickInputState,
     ModelProvider,
@@ -66,6 +68,8 @@ class ServerConfig(tap.TypedArgs):
     command_type: Literal["joystick", "simple_joystick", "control_vector", "expanded_control_vector"] = tap.arg(
         default="expanded_control_vector", help="Type of command to use"
     )
+
+    keyframes: int | None = tap.arg(default=None, help="Number of keyframe animations to append to command")
 
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
@@ -286,46 +290,43 @@ async def serve(config: ServerConfig) -> None:
     )
 
     key_state: InputState
+    default: Callable[[], Awaitable[None]] | None = None
 
     if config.command_type == "joystick":
         key_state = JoystickInputState()
+
+        async def default() -> None:
+            key_state.value = [1, 0, 0, 0, 0, 0, 0]
+
     elif config.command_type == "simple_joystick":
         key_state = SimpleJoystickInputState()
+
+        async def default() -> None:
+            key_state.value = [1, 0, 0, 0]
+
     elif config.command_type == "control_vector":
         key_state = ControlVectorInputState()
+        default = None
     elif config.command_type == "expanded_control_vector":
         key_state = ExpandedControlVectorInputState()
+        default = None
     else:
         raise ValueError(f"Invalid command type: {config.command_type}")
+
+    if config.keyframes is not None:
+        key_state = CombinedInputState(
+            [
+                key_state,
+                GenericOHEInputState(config.keyframes),
+            ]
+        )
 
     if config.use_keyboard:
 
         async def key_handler(key: str) -> None:
             await key_state.update(key)
 
-        match config.command_type:
-            case "joystick":
-
-                async def default() -> None:
-                    key_state.value = [1, 0, 0, 0, 0, 0, 0]
-
-                keyboard_controller = KeyboardController(key_handler, default=default)
-
-            case "simple_joystick":
-
-                async def default() -> None:
-                    key_state.value = [1, 0, 0, 0]
-
-                keyboard_controller = KeyboardController(key_handler, default=default)
-
-            case "control_vector":
-                keyboard_controller = KeyboardController(key_handler)
-
-            case "expanded_control_vector":
-                keyboard_controller = KeyboardController(key_handler)
-
-            case _:
-                raise ValueError(f"Invalid command type: {config.command_type}")
+        keyboard_controller = KeyboardController(key_handler, default=default)
 
         await keyboard_controller.start()
 

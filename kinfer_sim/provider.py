@@ -220,6 +220,45 @@ class ExpandedControlVectorInputState(InputState):
             self.value[5] -= self.STEP_SIZE
 
 
+class GenericOHEInputState(InputState):
+    """State to hold and modify control vector commands based on keyboard input."""
+
+    value: list[float]
+
+    def __init__(self, num_actions: int) -> None:
+        self.value = [0.0] * num_actions
+
+    async def update(self, key: str) -> None:
+        if key.isdigit() and int(key) < len(self.value):
+            self.value = [0.0] * len(self.value)
+            self.value[int(key)] = 1.0
+
+
+class CombinedInputState(InputState):
+    """Multiple input states combined into a single state."""
+
+    input_states: list[InputState]
+
+    def __init__(self, input_states: list[InputState]) -> None:
+        self.input_states = input_states
+
+    async def update(self, key: str) -> None:
+        for input_state in self.input_states:
+            await input_state.update(key)
+
+    @property
+    def value(self) -> list[float]:
+        return [item for sublist in [input_state.value for input_state in self.input_states] for item in sublist]
+
+    @value.setter
+    def value(self, new_value: list[float]) -> None:
+        start_idx = 0
+        for input_state in self.input_states:
+            end_idx = start_idx + len(input_state.value)
+            input_state.value = new_value[start_idx:end_idx]
+            start_idx = end_idx
+
+
 class ModelProvider(ModelProviderABC):
     simulator: MujocoSimulator
     quat_name: str
@@ -258,7 +297,6 @@ class ModelProvider(ModelProviderABC):
             Dictionary mapping input type names to numpy arrays
         """
         inputs = {}
-
         for input_type in input_types:
             if input_type == "joint_angles":
                 inputs[input_type] = self.get_joint_angles(metadata.joint_names)  # type: ignore[attr-defined]
