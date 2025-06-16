@@ -6,7 +6,7 @@ import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Callable, Optional, Type, TypedDict
-
+import math
 import numpy as np
 from kscale.web.gen.api import ActuatorMetadataOutput, JointMetadataOutput
 
@@ -128,6 +128,14 @@ class PlannerState:
     position: float
     velocity: float
 
+def get_servo_deadband() -> tuple[float, float]:
+    """Get deadband values based on current servo configuration"""
+    ENCODER_RESOLUTION = 0.087 * math.pi / 180  # radians
+    
+    pos_deadband = 2 * ENCODER_RESOLUTION
+    neg_deadband = 2 * ENCODER_RESOLUTION
+    
+    return pos_deadband, neg_deadband
 
 def trapezoidal_step(
     state: PlannerState,
@@ -136,22 +144,51 @@ def trapezoidal_step(
     v_max: float,
     a_max: float,
     dt: float,
+    positive_deadband: float,
+    negative_deadband: float,
 ) -> PlannerState:
-    """Scalar trapezoidal velocity planner."""
-    pos_err = target_pos - state.position
-    direction = 1.0 if pos_err >= 0 else -1.0
-    stop_dist = (state.velocity**2) / (2 * a_max) if a_max > 0 else 0.0
+    """Scalar trapezoidal velocity planner with deadband logic."""
+    
+    position_error = target_pos - state.position
 
-    accel = direction * a_max if abs(pos_err) > stop_dist else -direction * a_max
-    new_vel = state.velocity + accel * dt
-    new_vel = max(-v_max, min(v_max, new_vel))
+    # Determine which deadband to use based on error direction
+    deadband_threshold = positive_deadband if position_error >= 0 else negative_deadband
+    
+    in_deadband = abs(position_error) <= deadband_threshold
 
-    # Prevent overshoot when decelerating past zero
-    if direction * new_vel < 0:
-        new_vel = 0.0
-
-    new_pos = state.position + new_vel * dt
-    return PlannerState(position=new_pos, velocity=new_vel)
+    if in_deadband:
+        # Deadband behavior: gradually decay velocity
+        decay_factor = 0.8  # Tunable parameter - could be measured from real servo
+        new_velocity = state.velocity * decay_factor
+        new_position = state.position + new_velocity * dt
+    else:
+        # Planning behavior: normal trapezoidal planning
+        target_direction = 1.0 if position_error >= 0 else -1.0
+        
+        # Calculate stopping distance for current velocity
+        stopping_distance = abs(state.velocity**2) / (2 * a_max)
+        
+        # Check if velocity is aligned with target direction
+        velocity_direction = 1.0 if state.velocity >= 0 else -1.0
+        moving_towards_target = velocity_direction * target_direction >= 0
+        
+        should_accelerate = moving_towards_target and abs(position_error) > stopping_distance
+        
+        # Choose acceleration
+        if should_accelerate:
+            acceleration = target_direction * a_max  # Accelerate towards target
+        else:
+            acceleration = -velocity_direction * a_max  # Decelerate (oppose current velocity)
+        
+        # Handle zero velocity case
+        if abs(state.velocity) < 1e-6:
+            acceleration = target_direction * a_max  # If stopped, accelerate towards target
+        
+        new_velocity = state.velocity + acceleration * dt
+        new_velocity = max(-v_max, min(v_max, new_velocity))
+        new_position = state.position + new_velocity * dt
+    
+    return PlannerState(position=new_position, velocity=new_velocity)
 
 
 @register_actuator("feetech")
@@ -172,6 +209,8 @@ class FeetechActuator(Actuator):
         v_max: float,
         a_max: float,
         dt: float,
+        positive_deadband: float,
+        negative_deadband: float,
     ) -> None:
         self.kp = kp
         self.kd = kd
@@ -185,6 +224,8 @@ class FeetechActuator(Actuator):
         self.a_max = a_max
         self.dt = dt
         self._state: Optional[PlannerState] = None
+        self.positive_deadband = positive_deadband
+        self.negative_deadband = negative_deadband
 
     @classmethod
     def from_metadata(
@@ -208,6 +249,8 @@ class FeetechActuator(Actuator):
             v_max=_as_float(actuator_meta.max_velocity, default=5.0),
             a_max=_as_float(actuator_meta.amax, default=17.45),
             dt=dt,
+            positive_deadband=get_servo_deadband()[0],
+            negative_deadband=get_servo_deadband()[1],
         )
 
     def get_ctrl(
@@ -226,6 +269,8 @@ class FeetechActuator(Actuator):
             v_max=self.v_max,
             a_max=self.a_max,
             dt=self.dt,
+            positive_deadband=self.positive_deadband,
+            negative_deadband=self.negative_deadband,
         )
         pos_err = self._state.position - qpos
         vel_err = self._state.velocity - qvel
