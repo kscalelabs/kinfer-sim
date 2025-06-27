@@ -151,6 +151,7 @@ class ModelProvider(ModelProviderABC):
         self.arrays = {}
         self.key_queue = key_queue
         self.command_array = np.zeros(6) # vx vy wz base_height roll pitch
+        self.initial_heading = quat_to_euler(self.simulator._data.sensor(self.quat_name).data)[2]
         self.heading = None
         return self
     
@@ -218,6 +219,8 @@ class ModelProvider(ModelProviderABC):
                 inputs[input_type] = self.get_joint_angular_velocities(metadata.joint_names)  # type: ignore[attr-defined]
             elif input_type == "quaternion":
                 inputs[input_type] = self.get_quaternion()
+            elif input_type == "initial_heading":
+                inputs[input_type] = np.array([self.initial_heading])
             elif input_type == "accelerometer":
                 inputs[input_type] = self.get_accelerometer()
             elif input_type == "gyroscope":
@@ -252,18 +255,6 @@ class ModelProvider(ModelProviderABC):
     def get_quaternion(self) -> np.ndarray:
         sensor = self.simulator._data.sensor(self.quat_name)
         quat_array = np.array(sensor.data, dtype=np.float32)
-
-        if self.heading == None: # lazy init heading after we are sure sim has been reset
-            self.heading = quat_to_euler(quat_array)[2]
-
-        quat_array += np.random.normal(
-            -self.simulator._imu_quat_noise, self.simulator._imu_quat_noise, quat_array.shape
-        )
-
-        # backspin by heading
-        heading_quat = euler_to_quat(np.array([0, 0, self.heading]))
-        quat_array = rotate_quat_by_quat(quat_array, heading_quat, inverse=True)
-        quat_array = ensure_quat_in_positive_hemisphere(quat_array)
         self.arrays["quaternion"] = quat_array
         return quat_array
 
@@ -305,10 +296,12 @@ class ModelProvider(ModelProviderABC):
 
         if self.heading is not None:
             self.heading += self.command_array[2] * self.simulator._control_dt
+        else:
+            self.heading = 0.0
 
         command_obs = np.concatenate([
             self.command_array[:3],
-            np.zeros(1), # mask out carried heading
+            np.array([self.heading]),
             self.command_array[3:],
         ])
 
