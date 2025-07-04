@@ -246,7 +246,7 @@ class FeetechActuator(Actuator):
             kt=_as_float(actuator_meta.kt, default=1.0),
             r=_as_float(actuator_meta.R, default=1.0),
             error_gain=_as_float(actuator_meta.error_gain, default=1.0),
-            v_max=_as_float(actuator_meta.max_velocity, default=5.0),
+            v_max=_as_float(actuator_meta.max_velocity, default=2.0),
             a_max=_as_float(actuator_meta.amax, default=17.45),
             dt=dt,
             positive_deadband=get_servo_deadband()[0],
