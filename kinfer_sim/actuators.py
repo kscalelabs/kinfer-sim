@@ -1,12 +1,12 @@
 """Actuators for kinfer-sim."""
-
 from __future__ import annotations
 
 import logging
+import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Callable, Optional, Type, TypedDict
-import math
+
 import numpy as np
 from kscale.web.gen.api import ActuatorMetadataOutput, JointMetadataOutput
 
@@ -130,11 +130,11 @@ class PlannerState:
 
 
 def get_servo_deadband() -> tuple[float, float]:
-    """Get deadband values based on current servo configuration"""
-    ENCODER_RESOLUTION = 0.087 * math.pi / 180  # radians
+    """Get deadband values based on current servo configuration."""
+    encoder_resolution = 0.087 * math.pi / 180  # radians
 
-    pos_deadband = 2 * ENCODER_RESOLUTION
-    neg_deadband = 2 * ENCODER_RESOLUTION
+    pos_deadband = 2 * encoder_resolution
+    neg_deadband = 2 * encoder_resolution
 
     return pos_deadband, neg_deadband
 
@@ -150,7 +150,6 @@ def trapezoidal_step(
     negative_deadband: float,
 ) -> PlannerState:
     """Scalar trapezoidal velocity planner with deadband logic."""
-
     position_error = target_pos - state.position
 
     # Determine which deadband to use based on error direction
