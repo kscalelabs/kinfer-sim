@@ -128,14 +128,16 @@ class PlannerState:
     position: float
     velocity: float
 
+
 def get_servo_deadband() -> tuple[float, float]:
     """Get deadband values based on current servo configuration"""
     ENCODER_RESOLUTION = 0.087 * math.pi / 180  # radians
-    
+
     pos_deadband = 2 * ENCODER_RESOLUTION
     neg_deadband = 2 * ENCODER_RESOLUTION
-    
+
     return pos_deadband, neg_deadband
+
 
 def trapezoidal_step(
     state: PlannerState,
@@ -148,12 +150,12 @@ def trapezoidal_step(
     negative_deadband: float,
 ) -> PlannerState:
     """Scalar trapezoidal velocity planner with deadband logic."""
-    
+
     position_error = target_pos - state.position
 
     # Determine which deadband to use based on error direction
     deadband_threshold = positive_deadband if position_error >= 0 else negative_deadband
-    
+
     in_deadband = abs(position_error) <= deadband_threshold
 
     if in_deadband:
@@ -164,30 +166,30 @@ def trapezoidal_step(
     else:
         # Planning behavior: normal trapezoidal planning
         target_direction = 1.0 if position_error >= 0 else -1.0
-        
+
         # Calculate stopping distance for current velocity
         stopping_distance = abs(state.velocity**2) / (2 * a_max)
-        
+
         # Check if velocity is aligned with target direction
         velocity_direction = 1.0 if state.velocity >= 0 else -1.0
         moving_towards_target = velocity_direction * target_direction >= 0
-        
+
         should_accelerate = moving_towards_target and abs(position_error) > stopping_distance
-        
+
         # Choose acceleration
         if should_accelerate:
             acceleration = target_direction * a_max  # Accelerate towards target
         else:
             acceleration = -velocity_direction * a_max  # Decelerate (oppose current velocity)
-        
+
         # Handle zero velocity case
         if abs(state.velocity) < 1e-6:
             acceleration = target_direction * a_max  # If stopped, accelerate towards target
-        
+
         new_velocity = state.velocity + acceleration * dt
         new_velocity = max(-v_max, min(v_max, new_velocity))
         new_position = state.position + new_velocity * dt
-    
+
     return PlannerState(position=new_position, velocity=new_velocity)
 
 
