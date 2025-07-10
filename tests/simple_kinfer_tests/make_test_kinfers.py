@@ -168,8 +168,8 @@ def build_kinfer_file(recipe: Recipe, joint_names: list[str], out_dir: Path) -> 
         carry_size=(1,),
     )
     kinfer_blob = pack(
-        export_fn(recipe.init_fn, metadata), # type: ignore[arg-type]
-        export_fn(recipe.step_fn, metadata), # type: ignore[arg-type]
+        export_fn(recipe.init_fn, metadata),  # type: ignore[arg-type]
+        export_fn(recipe.step_fn, metadata),  # type: ignore[arg-type]
         metadata,
     )
     out_path = out_dir / f"{recipe.name}.kinfer"
