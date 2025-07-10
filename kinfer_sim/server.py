@@ -205,6 +205,18 @@ class SimulationServer:
                 output, carry = await loop.run_in_executor(None, model_runner.step, carry)
                 await loop.run_in_executor(None, model_runner.take_action, output)
 
+                # Plot policy inputs and outputs to the viewer
+                if isinstance(self.simulator._viewer, QtViewer):
+                    for input_name, input_array in model_provider.arrays.items():
+                        input_scalars = {
+                            f"{input_name}_{idx}": float(val) for idx, val in enumerate(input_array.flatten())
+                        }
+
+                        self.simulator._viewer.push_plot_metrics(
+                            scalars=input_scalars,
+                            group=f"{input_name}",
+                        )
+
                 num_steps += 1
                 if logs is not None:
                     logs.append(model_provider.arrays.copy())
