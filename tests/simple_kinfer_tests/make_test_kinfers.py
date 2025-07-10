@@ -1,4 +1,4 @@
-"""Simple kinfer model that sends zeros to all the joints."""
+"""Utility to make kinfer runtimes that test the functionality of the K-Bot."""
 
 import argparse
 import asyncio
@@ -24,6 +24,7 @@ logger = logging.getLogger(__name__)
 
 
 SIM_DT = 0.02
+NUM_COMMANDS = 6  # placeholder for tests
 
 # Joint biases, these are in the order that they appear in the neural network.
 JOINT_BIASES: list[tuple[str, float, float]] = [
@@ -50,8 +51,6 @@ JOINT_BIASES: list[tuple[str, float, float]] = [
 ]
 
 
-NUM_COMMANDS = 6  # placeholder for tests
-
 StepFn = Callable[
     [Array, Array, Array, Array, Array, Array],  # state inputs
     tuple[Array, Array],  # (targets, carry)
@@ -72,11 +71,13 @@ def get_mujoco_model() -> mujoco.MjModel:
 
 
 def get_joint_names() -> list[str]:
+    """Get the joint names."""
     model = get_mujoco_model()
     return ksim.get_joint_names_in_order(model)[1:]  # drop root joint
 
 
 def make_zero_recipe(num_joints: int, dt: float) -> Recipe:
+    """Sends zeros to all the joints."""
     carry_shape = (1,)
 
     @jax.jit
@@ -105,6 +106,7 @@ def get_bias_vector(joint_names: list[str]) -> jnp.ndarray:
 
 
 def make_bias_recipe(joint_names: list[str], dt: float) -> Recipe:
+    """Sends the bias values to all the joints."""
     bias_vec = get_bias_vector(joint_names)
     carry_shape = (1,)
 
@@ -127,7 +129,39 @@ def make_bias_recipe(joint_names: list[str], dt: float) -> Recipe:
     return Recipe("kbot_bias_position", init_fn, step_fn)
 
 
-def build_kinfer(recipe: Recipe, joint_names: list[str], out_dir: Path) -> Path:
+# (amplitude [rad], frequency [Hz]) for each joint name
+JOINT_SINE_PARAMS: dict[str, tuple[float, float]] = {name: (0.15, 0.6) for name, *_ in JOINT_BIASES}
+
+
+def make_sine_recipe(joint_names: list[str], dt: float) -> Recipe:
+    """Bias pose ± small sinusoid on every joint (no mirroring tricks)."""
+    bias_vec = get_bias_vector(joint_names)
+    amps = jnp.array([JOINT_SINE_PARAMS[n][0] for n in joint_names])
+    freqs = jnp.array([JOINT_SINE_PARAMS[n][1] for n in joint_names])
+    carry_shape = (1,)
+
+    @jax.jit
+    def init_fn() -> Array:
+        return jnp.zeros(carry_shape)
+
+    @jax.jit
+    def step_fn(
+        joint_angles: Array,
+        joint_angular_velocities: Array,
+        quaternion: Array,
+        initial_heading: Array,
+        command: Array,
+        carry: Array,
+    ) -> tuple[Array, Array]:
+        t = carry[0] + dt
+        offsets = amps * jnp.sin(2 * jnp.pi * freqs * t)
+        return bias_vec + offsets, jnp.array([t])
+
+    return Recipe("kbot_sine_motion", init_fn, step_fn)
+
+
+def build_kinfer_file(recipe: Recipe, joint_names: list[str], out_dir: Path) -> Path:
+    """Build a kinfer file for a given recipe."""
     metadata = PyModelMetadata(
         joint_names=joint_names,
         num_commands=NUM_COMMANDS,
@@ -168,9 +202,10 @@ def main() -> None:
     recipes = [
         make_zero_recipe(num_joints, SIM_DT),
         make_bias_recipe(joint_names, SIM_DT),
+        make_sine_recipe(joint_names, SIM_DT),
     ]
     for recipe in recipes:
-        out_path = build_kinfer(recipe, joint_names, out_dir)
+        out_path = build_kinfer_file(recipe, joint_names, out_dir)
         logger.info("kinfer model written to %s", out_path)
 
 
