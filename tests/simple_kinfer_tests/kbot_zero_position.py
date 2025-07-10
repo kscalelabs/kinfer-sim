@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import logging
 from pathlib import Path
+import colorlogging
 
 import jax
 import jax.numpy as jnp
@@ -16,8 +17,10 @@ from kinfer.export.jax import export_fn
 from kinfer.export.serialize import pack
 from kinfer.rust_bindings import PyModelMetadata
 
-NUM_COMMANDS = 6  # all zeros for this test
+logger = logging.getLogger(__name__)
 
+
+NUM_COMMANDS = 6  # placeholder for test
 
 def get_mujoco_model() -> mujoco.MjModel:
     """Get the MuJoCo model for the K-Bot."""
@@ -26,8 +29,12 @@ def get_mujoco_model() -> mujoco.MjModel:
 
 
 def main() -> None:
+    colorlogging.configure()
     parser = argparse.ArgumentParser()
-    parser.add_argument("output_path", type=str, help="Output path for the kinfer model")
+    # Get the current script name and replace .py with .kinfer for default output
+    default_output = Path(__file__).stem + ".kinfer"
+    parser.add_argument("--output", "-o", type=str, default=default_output, 
+                       help="Output path for the kinfer model (default: %(default)s)")
     args = parser.parse_args()
 
     # Get the mujoco model and joint names
@@ -37,7 +44,7 @@ def main() -> None:
     # Get the number of joints
     num_joints = len(joint_names)
 
-    logging.info("Number of joints: %s", num_joints)
+    logger.info("Number of joints: %s", num_joints)
 
     # Carry shape to store time
     carry_shape = (1,)
@@ -70,17 +77,17 @@ def main() -> None:
         carry_size=carry_shape,
     )
 
-    logging.info("Creating zero action model")
-    logging.info("All joints will be set to 0.0")
+    logger.info("Creating zero action model")
+    logger.info("All joints will be set to 0.0")
 
     init_onnx = export_fn(init_fn, metadata)
     step_onnx = export_fn(step_fn, metadata)
     kinfer_model = pack(init_onnx, step_onnx, metadata)
 
-    out_path = Path(args.output_path)
+    out_path = Path(args.output)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(kinfer_model)
-    logging.info("Zero action kinfer model written to %s", out_path)
+    logger.info("Zero action kinfer model written to %s", out_path)
 
 
 if __name__ == "__main__":
