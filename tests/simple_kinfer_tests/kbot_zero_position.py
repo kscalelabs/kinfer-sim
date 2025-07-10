@@ -46,10 +46,7 @@ def main() -> None:
     # Get the mujoco model and joint names
     mujoco_model = get_mujoco_model()
     joint_names = ksim.get_joint_names_in_order(mujoco_model)[1:]  # Remove root joint
-
-    # Get the number of joints
     num_joints = len(joint_names)
-
     logger.info("Number of joints: %s", num_joints)
 
     # Carry shape to store time
