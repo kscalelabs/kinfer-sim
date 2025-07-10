@@ -4,8 +4,8 @@ import argparse
 import asyncio
 import logging
 from pathlib import Path
-import colorlogging
 
+import colorlogging
 import jax
 import jax.numpy as jnp
 import ksim
@@ -22,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 NUM_COMMANDS = 6  # placeholder for test
 
+
 def get_mujoco_model() -> mujoco.MjModel:
     """Get the MuJoCo model for the K-Bot."""
     mjcf_path = asyncio.run(ksim.get_mujoco_model_path("kbot-headless", name="robot"))
@@ -33,8 +34,13 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     # Get the current script name and replace .py with .kinfer for default output
     default_output = Path(__file__).stem + ".kinfer"
-    parser.add_argument("--output", "-o", type=str, default=default_output, 
-                       help="Output path for the kinfer model (default: %(default)s)")
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        default=default_output,
+        help="Output path for the kinfer model (default: %(default)s)",
+    )
     args = parser.parse_args()
 
     # Get the mujoco model and joint names
