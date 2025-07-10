@@ -14,26 +14,6 @@ from kbot_train import JOINT_BIASES, HumanoidWalkingTask, HumanoidWalkingTaskCon
 
 NUM_COMMANDS = 6  # all zeros for this test
 
-# Analyzing JOINT_BIASES for symmetric pairs:
-# Right side bias values vs Left side bias values:
-# right_hip_yaw (0): 0.0     vs left_hip_yaw (6): 0.0        → SAME
-# right_hip_roll (1): -0.1   vs left_hip_roll (7): +0.1      → OPPOSITE
-# right_hip_pitch (2): -0.4  vs left_hip_pitch (8): -0.4     → SAME
-# right_knee_pitch (3): -0.8 vs left_knee_pitch (9): -0.8    → SAME
-# right_ankle_pitch (4): -0.4 vs left_ankle_pitch (10): -0.4 → SAME  
-# right_ankle_roll (5): -0.1 vs left_ankle_roll (11): +0.1   → OPPOSITE
-# right_shoulder_pitch (16): 0.0 vs left_shoulder_pitch (12): 0.0 → SAME
-# right_shoulder_roll (17): -0.2 vs left_shoulder_roll (13): +0.2 → OPPOSITE
-# right_elbow_roll (18): +0.2 vs left_elbow_roll (14): -0.2  → OPPOSITE
-# right_gripper_roll (19): 0.0 vs left_gripper_roll (15): 0.0 → SAME
-
-# Left and right joint indices
-LEFT_JOINT_INDICES = jnp.array([6, 7, 8, 9, 10, 11, 12, 13, 14, 15])
-RIGHT_JOINT_INDICES = jnp.array([0, 1, 2, 3, 4, 5, 16, 17, 18, 19])
-
-# Inversion mask for right joints (1 = normal, -1 = invert)
-RIGHT_INVERSION_MASK = jnp.array([1, -1, 1, 1, 1, -1, -1, -1, -1, 1])  # hip_roll, ankle_roll, shoulder_roll, elbow_roll inverted
-
 
 def main() -> None:
     parser = argparse.ArgumentParser()
