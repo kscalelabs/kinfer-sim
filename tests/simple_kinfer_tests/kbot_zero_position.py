@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import logging
 from pathlib import Path
 
 import jax
@@ -36,7 +37,7 @@ def main() -> None:
     # Get the number of joints
     num_joints = len(joint_names)
 
-    print(f"Number of joints: {num_joints}")
+    logging.info("Number of joints: %s", num_joints)
 
     # Carry shape to store time
     carry_shape = (1,)
@@ -69,8 +70,8 @@ def main() -> None:
         carry_size=carry_shape,
     )
 
-    print("Creating zero action model")
-    print("All joints will be set to 0.0")
+    logging.info("Creating zero action model")
+    logging.info("All joints will be set to 0.0")
 
     init_onnx = export_fn(init_fn, metadata)
     step_onnx = export_fn(step_fn, metadata)
@@ -79,7 +80,7 @@ def main() -> None:
     out_path = Path(args.output_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_bytes(kinfer_model)
-    print(f"Zero action kinfer model written to {out_path}")
+    logging.info("Zero action kinfer model written to %s", out_path)
 
 
 if __name__ == "__main__":
