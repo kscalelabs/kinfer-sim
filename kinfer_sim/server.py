@@ -49,6 +49,7 @@ class ServerConfig(tap.TypedArgs):
     pd_update_frequency: float = tap.arg(default=1000.0, help="PD update frequency for the actuators (Hz)")
     no_gravity: bool = tap.arg(default=False, help="Enable gravity")
     start_height: float = tap.arg(default=1.1, help="Start height")
+    suspend: bool = tap.arg(default=False, help="Suspend robot base in place to prevent falling")
     quat_name: str = tap.arg(default="imu_site_quat", help="Name of the quaternion sensor")
     acc_name: str = tap.arg(default="imu_acc", help="Name of the accelerometer sensor")
     gyro_name: str = tap.arg(default="imu_gyro", help="Name of the gyroscope sensor")
@@ -99,6 +100,7 @@ class SimulationServer:
             gravity=not config.no_gravity,
             render_mode="offscreen" if config.no_render else "window",
             start_height=config.start_height,
+            suspended=config.suspend,
             command_delay_min=config.command_delay_min,
             command_delay_max=config.command_delay_max,
             drop_rate=config.drop_rate,

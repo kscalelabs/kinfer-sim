@@ -160,6 +160,7 @@ class MujocoSimulator:
         render_mode: Literal["window", "offscreen"] = "window",
         freejoint: bool = True,
         start_height: float = 1.5,
+        suspended: bool = False,
         command_delay_min: float | None = None,
         command_delay_max: float | None = None,
         drop_rate: float = 0.0,
@@ -192,6 +193,7 @@ class MujocoSimulator:
         self._render_mode = render_mode
         self._freejoint = freejoint
         self._start_height = start_height
+        self._suspended = suspended
         self._command_delay_min = command_delay_min
         self._command_delay_max = command_delay_max
         self._drop_rate = drop_rate
@@ -269,6 +271,12 @@ class MujocoSimulator:
             self._data.qpos[:] = np.zeros_like(self._data.qpos)
         self._data.qvel = np.zeros_like(self._data.qvel)
         self._data.qacc = np.zeros_like(self._data.qacc)
+
+        # Store initial base position and orientation for suspend mode
+        if self._suspended and self._freejoint:
+            self._suspended_base_pos = self._data.qpos[:3].copy()
+            self._suspended_base_quat = self._data.qpos[3:7].copy()
+            logger.info("Suspend mode enabled - base position will be fixed at: %s", self._suspended_base_pos)
 
         # Important: Step simulation once to initialize internal structures
         mujoco.mj_forward(self._model, self._data)
@@ -354,6 +362,14 @@ class MujocoSimulator:
         mujoco.mj_forward(self._model, self._data)
         mujoco.mj_step(self._model, self._data)
 
+        # Fix base position if suspended
+        if self._suspended and self._freejoint:
+            self._data.qpos[:3] = self._suspended_base_pos
+            self._data.qpos[3:7] = self._suspended_base_quat
+            # Also zero out base velocities to prevent drift
+            self._data.qvel[:6] = 0.0
+            logger.debug("Fixed base position to suspended state: %s", self._suspended_base_pos)
+
         if isinstance(self._viewer, QtViewer):
             # Push physics state to the viewer.
             self._viewer.push_state(
@@ -433,6 +449,18 @@ class MujocoSimulator:
     def sim_time(self) -> float:
         return self._sim_time
 
+    def set_suspend_mode(self, suspend: bool) -> None:
+        """Enable or disable suspend mode at runtime."""
+        if suspend and not self._suspended and self._freejoint:
+            # Store current base position when enabling suspend
+            self._suspended_base_pos = self._data.qpos[:3].copy()
+            self._suspended_base_quat = self._data.qpos[3:7].copy()
+            logger.info("Enabled suspend mode - base position fixed at: %s", self._suspended_base_pos)
+        elif not suspend and self._suspended:
+            logger.info("Disabled suspend mode - robot base is now free")
+
+        self._suspended = suspend
+
     async def reset(
         self,
         xyz: tuple[float, float, float] | None = None,
@@ -477,6 +505,12 @@ class MujocoSimulator:
         self._data.qacc[:] = qacc
         mujoco.mj_forward(self._model, self._data)
         self._current_commands.clear()
+
+        # Update suspended base position if in suspend mode
+        if self._suspended and self._freejoint:
+            self._suspended_base_pos = self._data.qpos[:3].copy()
+            self._suspended_base_quat = self._data.qpos[3:7].copy()
+            logger.info("Updated suspended base position to: %s", self._suspended_base_pos)
 
     async def close(self) -> None:
         """Clean up simulation resources."""
