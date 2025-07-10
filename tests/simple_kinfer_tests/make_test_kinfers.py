@@ -146,8 +146,7 @@ def build_kinfer(recipe: Recipe, joint_names: list[str], out_dir: Path) -> Path:
 def main() -> None:
     colorlogging.configure()
     parser = argparse.ArgumentParser()
-    # Get the current script name and replace .py with .kinfer for default output
-    default_output = Path(__file__).parent
+    default_output = Path(__file__).parent / "outputs"
     parser.add_argument(
         "--output",
         "-o",
@@ -156,6 +155,10 @@ def main() -> None:
         help="Output path for the kinfer model (default: %(default)s)",
     )
     args = parser.parse_args()
+
+    # Ensure the output directory exists
+    out_dir = Path(args.output)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
     joint_names = get_joint_names()
     num_joints = len(joint_names)
@@ -167,7 +170,7 @@ def main() -> None:
         make_bias_recipe(joint_names, SIM_DT),
     ]
     for recipe in recipes:
-        out_path = build_kinfer(recipe, joint_names, Path(args.output))
+        out_path = build_kinfer(recipe, joint_names, out_dir)
         logger.info("kinfer model written to %s", out_path)
 
 
