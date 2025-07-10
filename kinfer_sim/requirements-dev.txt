@@ -5,6 +5,3 @@ darglint
 mypy
 pytest
 ruff
-
-ksim
-jax
