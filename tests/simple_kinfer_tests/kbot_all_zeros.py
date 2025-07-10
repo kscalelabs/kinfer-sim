@@ -1,3 +1,5 @@
+"""Simple kinfer model that sends zeros to all the joints."""
+
 import argparse
 import asyncio
 import math
@@ -59,7 +61,7 @@ def main() -> None:
 
     # Extract just the bias values in order
     joint_bias_values = jnp.array([bias for _, bias, _ in JOINT_BIASES])
-    
+
     # Carry shape to store time
     carry_shape = (1,)
 
@@ -78,10 +80,10 @@ def main() -> None:
     ) -> tuple[Array, Array]:
         # Update time
         time = carry[0] + 0.02  # Increment by ctrl_dt
-        
+
         # Just return the bias values (neutral positions) for all joints
         all_targets = joint_bias_values
-        
+
         new_carry = jnp.array([time])
         return all_targets, new_carry
 
@@ -91,9 +93,9 @@ def main() -> None:
         carry_size=carry_shape,
     )
 
-    print(f"Creating zero action model")
-    print(f"All joints will hold their neutral/bias positions")
-    
+    print("Creating zero action model")
+    print("All joints will hold their neutral/bias positions")
+
     init_onnx = export_fn(init_fn, metadata)
     step_onnx = export_fn(step_fn, metadata)
     kinfer_model = pack(init_onnx, step_onnx, metadata)
