@@ -104,7 +104,14 @@ class PositionActuator(Actuator):
         max_torque = None
         if actuator_meta and actuator_meta.max_torque is not None:
             max_torque = float(actuator_meta.max_torque)
-        return cls(kp=_as_float(joint_meta.kp), kd=_as_float(joint_meta.kd), max_torque=max_torque)
+        joint_min, joint_max = get_joint_limits_from_metadata(joint_meta)
+        return cls(
+            kp=_as_float(joint_meta.kp),
+            kd=_as_float(joint_meta.kd),
+            max_torque=max_torque,
+            joint_min=joint_min,
+            joint_max=joint_max,
+        )
 
     def clamp_position_target(self, target_position: float) -> float:
         """Clamp target position to be within joint limits."""
@@ -340,21 +347,8 @@ def create_actuator(
     act_type = (joint_meta.actuator_type or "").lower()
     for prefix, cls in _actuator_registry.items():
         if act_type.startswith(prefix):
-            if cls == PositionActuator:
-                # Handle PositionActuator specially to include joint limits
-                max_torque = None
-                if actuator_meta and actuator_meta.max_torque is not None:
-                    max_torque = float(actuator_meta.max_torque)
-                return cls(
-                    kp=_as_float(joint_meta.kp),
-                    kd=_as_float(joint_meta.kd),
-                    max_torque=max_torque,
-                    joint_min=joint_min,
-                    joint_max=joint_max,
-                )
-            else:
-                # Use the standard from_metadata for Feetech
-                return cls.from_metadata(joint_meta, actuator_meta, dt=dt)
+            # Use the standard from_metadata for all actuators
+            return cls.from_metadata(joint_meta, actuator_meta, dt=dt)
 
     logger.warning("Unknown actuator type '%s', defaulting to PD", act_type)
     # Default to PositionActuator with joint limits
