@@ -344,9 +344,7 @@ def create_actuator(
     act_type = (joint_meta.actuator_type or "").lower()
     for prefix, cls in _actuator_registry.items():
         if act_type.startswith(prefix):
-            # Use the standard from_metadata for all actuators
             return cls.from_metadata(joint_meta, actuator_meta, dt=dt)
 
     logger.warning("Unknown actuator type '%s', defaulting to PD", act_type)
-    # Default to PositionActuator with joint limits
     return PositionActuator.from_metadata(joint_meta, actuator_meta, dt=dt)
