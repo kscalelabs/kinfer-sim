@@ -4,7 +4,7 @@ import logging
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Callable, Optional, Type, TypedDict
+from typing import Callable, Type, TypedDict
 
 import numpy as np
 from kscale.web.gen.api import ActuatorMetadataOutput, JointMetadataOutput
@@ -12,7 +12,7 @@ from kscale.web.gen.api import ActuatorMetadataOutput, JointMetadataOutput
 logger = logging.getLogger(__name__)
 
 
-def _as_float(value: str | float | None, *, default: Optional[float] = None) -> float:
+def _as_float(value: str | float | None, *, default: float | None = None) -> float:
     if value is None:
         if default is None:
             raise ValueError("Numeric metadata field is missing")
@@ -83,7 +83,7 @@ class PositionActuator(Actuator):
         *,
         kp: float,
         kd: float,
-        max_torque: Optional[float] = None,
+        max_torque: float | None = None,
         joint_min: float,
         joint_max: float,
     ) -> None:
@@ -256,7 +256,7 @@ class FeetechActuator(Actuator):
         self.v_max = v_max
         self.a_max = a_max
         self.dt = dt
-        self._state: Optional[PlannerState] = None
+        self._state: PlannerState | None = None
         self.positive_deadband = positive_deadband
         self.negative_deadband = negative_deadband
 
