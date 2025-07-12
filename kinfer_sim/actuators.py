@@ -324,9 +324,9 @@ class FeetechActuator(Actuator):
 def get_joint_limits_from_metadata(joint_meta: JointMetadataOutput) -> tuple[float, float]:
     """Extract joint limits from joint metadata, converting degrees to radians."""
     if joint_meta.min_angle_deg is None:
-        raise ValueError("Joint minimum angle limit not specified")
+        raise ValueError("Joint %s: minimum angle limit not specified" % joint_meta.id)
     if joint_meta.max_angle_deg is None:
-        raise ValueError("Joint maximum angle limit not specified")
+        raise ValueError("Joint %s: maximum angle limit not specified" % joint_meta.id)
 
     joint_min = math.radians(float(joint_meta.min_angle_deg))
     joint_max = math.radians(float(joint_meta.max_angle_deg))
@@ -341,9 +341,6 @@ def create_actuator(
     dt: float,
 ) -> Actuator:
     """Create an actuator instance from metadata."""
-    # Extract joint limits from metadata
-    joint_min, joint_max = get_joint_limits_from_metadata(joint_meta)
-
     act_type = (joint_meta.actuator_type or "").lower()
     for prefix, cls in _actuator_registry.items():
         if act_type.startswith(prefix):
@@ -352,13 +349,4 @@ def create_actuator(
 
     logger.warning("Unknown actuator type '%s', defaulting to PD", act_type)
     # Default to PositionActuator with joint limits
-    max_torque = None
-    if actuator_meta and actuator_meta.max_torque is not None:
-        max_torque = float(actuator_meta.max_torque)
-    return PositionActuator(
-        kp=_as_float(joint_meta.kp),
-        kd=_as_float(joint_meta.kd),
-        max_torque=max_torque,
-        joint_min=joint_min,
-        joint_max=joint_max,
-    )
+    return PositionActuator.from_metadata(joint_meta, actuator_meta, dt=dt)
