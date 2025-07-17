@@ -132,6 +132,7 @@ class PositionActuator(Actuator):
     ) -> float:
         # Clamp target position to joint limits
         target_position = cmd.get("position", 0.0)
+        # Clamped position is only used for warning if action is out of joint limits
         clamped_position = self.get_clamped_position_target(target_position)
 
         # Log warning if position was clamped
