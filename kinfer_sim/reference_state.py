@@ -1,32 +1,43 @@
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 import numpy as np
 
 
 @dataclass
 class IdealPositionTracker:
-    """
-    Keeps track of the *ideal* world–space (x, y) position that the robot would
-    occupy if it followed the commanded linear velocity perfectly.
+    """Track the ideal (x, y) world position given body-frame velocity commands."""
 
-    The tracker is intentionally agnostic to where the command originates
-    (keyboard, network, RL policy, etc.); callers simply pass the current
-    velocity command each control tick.
-    """
-
-    # In world coordinates, metres.
     pos: np.ndarray = field(default_factory=lambda: np.zeros(2, dtype=np.float32))
+    heading_rad: float = 0.0
 
-    def reset(self, origin_xy: tuple[float, float] | None = None) -> None:
-        """Re-initialise to (0, 0) or to a supplied reference point."""
+    def reset(
+        self,
+        origin_xy: tuple[float, float] | None = None,
+        heading_rad: float = 0.0,
+    ) -> None:
+        """Re-initialise reference state."""
         self.pos[:] = origin_xy if origin_xy is not None else (0.0, 0.0)
+        self.heading_rad = float(heading_rad)
 
-    def step(self, v_cmd_xy: tuple[float, float], dt: float) -> None:
+    def step(
+        self,
+        v_cmd_body_xy: tuple[float, float],
+        dt: float,
+        heading_rad: float | None = None,
+    ) -> None:
         """
-        Forward-Euler integration of the velocity command.
+        Integrate the body-frame (vx, vy) command into world coordinates.
 
-        Args
-        ----
-        v_cmd_xy : (vx, vy) command in **world** frame – metres/second
-        dt       : simulation/control time-step in seconds
+        If ``heading_rad`` is supplied, use it for this step; otherwise the
+        heading captured at ``reset`` is used (keeps API minimal).
         """
-        self.pos += np.asarray(v_cmd_xy, dtype=np.float32) * dt
+        h = float(self.heading_rad if heading_rad is None else heading_rad)
+        c, s = np.cos(h), np.sin(h)
+
+        # Rotate body-frame velocity → world-frame.
+        vx_b, vy_b = v_cmd_body_xy
+        vx_w = c * vx_b - s * vy_b
+        vy_w = s * vx_b + c * vy_b
+
+        self.pos += np.array([vx_w, vy_w], dtype=np.float32) * dt

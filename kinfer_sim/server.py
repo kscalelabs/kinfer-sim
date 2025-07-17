@@ -186,7 +186,12 @@ class SimulationServer:
         carry = model_runner.init()
 
         # reset tracker so that ideal and real start together
-        self._ideal_tracker.reset(tuple(self.simulator._data.qpos[:2]))
+        quat = self.simulator._data.sensor(self._quat_name).data
+        init_yaw = float(np.arctan2(          # quick yaw extraction
+            2 * (quat[0] * quat[3] + quat[1] * quat[2]),
+            1 - 2 * (quat[2] ** 2 + quat[3] ** 2),
+        ))
+        self._ideal_tracker.reset(tuple(self.simulator._data.qpos[:2]), heading_rad=init_yaw)
 
         logs: list[dict[str, np.ndarray]] | None = None
         if self._save_logs:
@@ -216,8 +221,13 @@ class SimulationServer:
                     # Works for ControlVector / ExpandedControlVector layouts.
                     vx, vy = self._keyboard_state.value[0], self._keyboard_state.value[1]
 
-                # 2. Advance the ideal trajectory
-                self._ideal_tracker.step((vx, vy), ctrl_dt)
+                # 2. Advance the ideal trajectory  (rotate cmd by *current* yaw)
+                quat_now = self.simulator._data.sensor(self._quat_name).data
+                yaw_now = float(np.arctan2(
+                    2 * (quat_now[0] * quat_now[3] + quat_now[1] * quat_now[2]),
+                    1 - 2 * (quat_now[2] ** 2 + quat_now[3] ** 2),
+                ))
+                self._ideal_tracker.step((vx, vy), ctrl_dt, heading_rad=yaw_now)
 
                 # 3. Compute tracking error (Euclidean distance in the horizontal plane)
                 real_xy = self.simulator._data.qpos[:2]
