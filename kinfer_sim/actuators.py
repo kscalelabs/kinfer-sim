@@ -47,6 +47,7 @@ class Actuator(ABC):
     @abstractmethod
     def from_metadata(
         cls,
+        joint_name: str,
         joint_meta: JointMetadataOutput,
         actuator_meta: ActuatorMetadataOutput | None,
         *,
@@ -81,12 +82,14 @@ class PositionActuator(Actuator):
     def __init__(
         self,
         *,
+        joint_name: str,
         kp: float,
         kd: float,
         max_torque: float | None = None,
         joint_min: float,
         joint_max: float,
-    ) -> None:
+    ) -> None:  
+        self.joint_name = joint_name
         self.kp = kp
         self.kd = kd
         self.max_torque = max_torque
@@ -96,6 +99,7 @@ class PositionActuator(Actuator):
     @classmethod
     def from_metadata(
         cls,
+        joint_name: str,
         joint_meta: JointMetadataOutput,
         actuator_meta: ActuatorMetadataOutput | None,
         *,
@@ -106,6 +110,7 @@ class PositionActuator(Actuator):
             max_torque = float(actuator_meta.max_torque)
         joint_min, joint_max = get_joint_limits_from_metadata(joint_meta)
         return cls(
+            joint_name=joint_name,
             kp=_as_float(joint_meta.kp),
             kd=_as_float(joint_meta.kd),
             max_torque=max_torque,
@@ -132,7 +137,8 @@ class PositionActuator(Actuator):
         # Log warning if position was clamped
         if target_position != clamped_position:
             logger.warning(
-                "Clamped position from %.3f to %.3f (limits: [%.3f, %.3f])",
+                "[%s] Clamped position from %.3f to %.3f (limits: [%.3f, %.3f])",
+                self.joint_name,
                 target_position,
                 clamped_position,
                 self.joint_min,
@@ -231,6 +237,7 @@ class FeetechActuator(Actuator):
     def __init__(
         self,
         *,
+        joint_name: str,
         kp: float,
         kd: float,
         max_torque: float,
@@ -245,6 +252,7 @@ class FeetechActuator(Actuator):
         positive_deadband: float,
         negative_deadband: float,
     ) -> None:
+        self.joint_name = joint_name
         self.kp = kp
         self.kd = kd
         self.max_torque = max_torque
@@ -263,6 +271,7 @@ class FeetechActuator(Actuator):
     @classmethod
     def from_metadata(
         cls,
+        joint_name: str,
         joint_meta: JointMetadataOutput,
         actuator_meta: ActuatorMetadataOutput | None,
         *,
@@ -271,6 +280,7 @@ class FeetechActuator(Actuator):
         if actuator_meta is None:
             raise ValueError("Feetech actuator metadata missing")
         return cls(
+            joint_name=joint_name,
             kp=_as_float(joint_meta.kp),
             kd=_as_float(joint_meta.kd),
             max_torque=_as_float(actuator_meta.max_torque),
@@ -335,6 +345,7 @@ def get_joint_limits_from_metadata(joint_meta: JointMetadataOutput) -> tuple[flo
 
 
 def create_actuator(
+    joint_name: str,
     joint_meta: JointMetadataOutput,
     actuator_meta: ActuatorMetadataOutput | None,
     *,
@@ -344,7 +355,7 @@ def create_actuator(
     act_type = (joint_meta.actuator_type or "").lower()
     for prefix, cls in _actuator_registry.items():
         if act_type.startswith(prefix):
-            return cls.from_metadata(joint_meta, actuator_meta, dt=dt)
+            return cls.from_metadata(joint_name, joint_meta, actuator_meta, dt=dt)
 
     logger.warning("Unknown actuator type '%s', defaulting to PD", act_type)
-    return PositionActuator.from_metadata(joint_meta, actuator_meta, dt=dt)
+    return PositionActuator.from_metadata(joint_name, joint_meta, actuator_meta, dt=dt)
