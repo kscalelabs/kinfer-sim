@@ -129,12 +129,10 @@ class SimulationServer:
         self._save_video = config.save_video
         self._save_logs = config.save_logs
         self._keyboard_state = keyboard_state
-        self._ideal_tracker = IdealPositionTracker()
+        self._reference_tracker = IdealPositionTracker()
 
-        # ── aggregates for average-error plot ────────────────
-        self._cumulative_error = 0.0
         self._sample_count = 0
-        # velocity-error aggregator
+        self._cumulative_pos_error = 0.0
         self._cumulative_vel_error = 0.0
 
         self._video_writer: VideoWriter | None = None
@@ -191,15 +189,15 @@ class SimulationServer:
 
         carry = model_runner.init()
 
-        # reset tracker so that ideal and real start together
+        # reset reference state tracker
         quat = self.simulator._data.sensor(self._quat_name).data
         init_yaw = float(
-            np.arctan2(  # quick yaw extraction
+            np.arctan2(
                 2 * (quat[0] * quat[3] + quat[1] * quat[2]),
                 1 - 2 * (quat[2] ** 2 + quat[3] ** 2),
             )
         )
-        self._ideal_tracker.reset(tuple(self.simulator._data.qpos[:2]), heading_rad=init_yaw)
+        self._reference_tracker.reset(tuple(self.simulator._data.qpos[:2]), heading_rad=init_yaw)
 
         logs: list[dict[str, np.ndarray]] | None = None
         if self._save_logs:
@@ -223,13 +221,12 @@ class SimulationServer:
                 output, carry = await loop.run_in_executor(None, model_runner.step, carry)
                 await loop.run_in_executor(None, model_runner.take_action, output)
 
-                # 1. Read *current* velocity command (metres/sec)
+                # Read current velocity command
                 vx, vy = 0.0, 0.0
                 if self._keyboard_state.value:
-                    # Works for ControlVector / ExpandedControlVector layouts.
                     vx, vy = self._keyboard_state.value[0], self._keyboard_state.value[1]
 
-                # 2. Advance the ideal trajectory  (rotate cmd by *current* yaw)
+                # Advance the ideal trajectory (rotate cmd by current yaw)
                 quat_now = self.simulator._data.sensor(self._quat_name).data
                 yaw_now = float(
                     np.arctan2(
@@ -237,45 +234,38 @@ class SimulationServer:
                         1 - 2 * (quat_now[2] ** 2 + quat_now[3] ** 2),
                     )
                 )
-                self._ideal_tracker.step((vx, vy), ctrl_dt, heading_rad=yaw_now)
+                self._reference_tracker.step((vx, vy), ctrl_dt, heading_rad=yaw_now)
 
-                # ---------- world-frame commanded & actual velocities ----------
+                # Track velocity error
                 c, s = np.cos(yaw_now), np.sin(yaw_now)
                 cmd_vx_w = c * vx - s * vy
                 cmd_vy_w = s * vx + c * vy
-
                 act_vx_w = float(self.simulator._data.qvel[0])
                 act_vy_w = float(self.simulator._data.qvel[1])
-
                 err_vx = act_vx_w - cmd_vx_w
                 err_vy = act_vy_w - cmd_vy_w
 
-                # 3. Compute tracking error (Euclidean distance in the horizontal plane)
+                # Track position error
                 real_xy = self.simulator._data.qpos[:2]
-
-                # ── X-axis signals ──────────────────────────────────────────
-                ideal_x = float(self._ideal_tracker.pos[0])
+                ideal_x = float(self._reference_tracker.pos[0])
                 actual_x = float(real_xy[0])
                 error_x = actual_x - ideal_x  # signed error
                 vx_cmd = vx
 
-                # ── Y-axis signals ──────────────────────────────────────────
-                ideal_y = float(self._ideal_tracker.pos[1])
+                ideal_y = float(self._reference_tracker.pos[1])
                 actual_y = float(real_xy[1])
                 error_y = actual_y - ideal_y
                 vy_cmd = vy
 
-                # ── running mean of Euclidean error ──────────
-                self._cumulative_error += float(np.hypot(error_x, error_y))
+                # Aggregate position and velocity errors
+                self._cumulative_pos_error += float(np.hypot(error_x, error_y))
                 self._sample_count += 1
-                mean_err = self._cumulative_error / self._sample_count
-
-                # velocity error aggregation
+                mean_pos_err = self._cumulative_pos_error / self._sample_count
                 self._cumulative_vel_error += float(np.hypot(err_vx, err_vy))
                 mean_vel_err = self._cumulative_vel_error / self._sample_count
 
+                # Plot errors
                 if isinstance(self.simulator._viewer, QtViewer):
-                    # One plot per axis; curves are grouped by the string key
                     self.simulator._viewer.push_plot_metrics(
                         scalars={
                             "ideal_x": ideal_x,
@@ -292,12 +282,10 @@ class SimulationServer:
                         },
                         group="Metrics/Y_Pos",
                     )
-                    # new single-value chart
                     self.simulator._viewer.push_plot_metrics(
-                        scalars={"mean_pos_error": mean_err},
+                        scalars={"mean_pos_error": mean_pos_err},
                         group="Metrics/Pos_Error_Avg",
                     )
-                    # ───────── velocity plots ──────────
                     self.simulator._viewer.push_plot_metrics(
                         scalars={
                             "cmd_vx": cmd_vx_w,
@@ -358,16 +346,16 @@ class SimulationServer:
             logger.error("Traceback: %s", traceback.format_exc())
 
         finally:
-            # ───────────────────────── summary ───────────────────────────
+            # Print summary
             if self._sample_count:
-                mean_pos_err = self._cumulative_error / self._sample_count
+                mean_pos_err = self._cumulative_pos_error / self._sample_count
                 mean_vel_err = self._cumulative_vel_error / self._sample_count
                 logger.info(
-                    "\n=========  RUN SUMMARY  =========\n"
+                    "\n=========  RUN METRICS SUMMARY  =========\n"
                     "Average XY position tracking error : %.4f  m\n"
                     "Average XY velocity tracking error : %.4f m/s\n"
                     "Samples                               : %d\n"
-                    "=================================\n",
+                    "==========================================\n",
                     mean_pos_err,
                     mean_vel_err,
                     self._sample_count,
