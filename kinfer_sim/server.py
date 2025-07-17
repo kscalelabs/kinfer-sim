@@ -131,6 +131,10 @@ class SimulationServer:
         self._keyboard_state = keyboard_state
         self._ideal_tracker = IdealPositionTracker()
 
+        # ── aggregates for average-error plot ────────────────
+        self._cumulative_error = 0.0
+        self._sample_count = 0
+
         self._video_writer: VideoWriter | None = None
         if self._save_video:
             self._save_path.mkdir(parents=True, exist_ok=True)
@@ -244,6 +248,11 @@ class SimulationServer:
                 error_y   = actual_y - ideal_y
                 vy_cmd    = vy
 
+                # ── running mean of Euclidean error ──────────
+                self._cumulative_error += float(np.hypot(error_x, error_y))
+                self._sample_count += 1
+                mean_err = self._cumulative_error / self._sample_count
+
                 if isinstance(self.simulator._viewer, QtViewer):
                     # One plot per axis; curves are grouped by the string key
                     self.simulator._viewer.push_plot_metrics(
@@ -263,6 +272,11 @@ class SimulationServer:
                             "error_y":  error_y,
                         },
                         group="Metrics/Y_Pos",
+                    )
+                    # new single-value chart
+                    self.simulator._viewer.push_plot_metrics(
+                        scalars={"mean_pos_error": mean_err},
+                        group="Metrics/Pos_Error_Avg",
                     )
 
                 # Plot policy inputs and outputs to the viewer
