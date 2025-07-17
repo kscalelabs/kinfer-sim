@@ -83,6 +83,7 @@ class PositionActuator(Actuator):
         self,
         *,
         joint_name: str,
+        joint_id: int,
         kp: float,
         kd: float,
         max_torque: float | None = None,
@@ -90,6 +91,7 @@ class PositionActuator(Actuator):
         joint_max: float,
     ) -> None:
         self.joint_name = joint_name
+        self.joint_id = joint_id
         self.kp = kp
         self.kd = kd
         self.max_torque = max_torque
@@ -111,6 +113,7 @@ class PositionActuator(Actuator):
         joint_min, joint_max = get_joint_limits_from_metadata(joint_meta)
         return cls(
             joint_name=joint_name,
+            joint_id=joint_meta.id,
             kp=_as_float(joint_meta.kp),
             kd=_as_float(joint_meta.kd),
             max_torque=max_torque,
@@ -138,8 +141,9 @@ class PositionActuator(Actuator):
         # Log warning if position was clamped
         if target_position != clamped_position:
             logger.warning(
-                "%s's action %s was out of joint limits: [%.3f, %.3f]",
+                "%s (id %d) action %s was out of joint limits: [%.3f, %.3f]",
                 self.joint_name,
+                self.joint_id,
                 target_position,
                 self.joint_min,
                 self.joint_max,
@@ -238,6 +242,7 @@ class FeetechActuator(Actuator):
         self,
         *,
         joint_name: str,
+        joint_id: int,
         kp: float,
         kd: float,
         max_torque: float,
@@ -253,6 +258,7 @@ class FeetechActuator(Actuator):
         negative_deadband: float,
     ) -> None:
         self.joint_name = joint_name
+        self.joint_id = joint_id
         self.kp = kp
         self.kd = kd
         self.max_torque = max_torque
@@ -281,6 +287,7 @@ class FeetechActuator(Actuator):
             raise ValueError("Feetech actuator metadata missing")
         return cls(
             joint_name=joint_name,
+            joint_id=joint_meta.id,
             kp=_as_float(joint_meta.kp),
             kd=_as_float(joint_meta.kd),
             max_torque=_as_float(actuator_meta.max_torque),
