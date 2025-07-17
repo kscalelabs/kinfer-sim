@@ -233,6 +233,7 @@ class MujocoSimulator:
             act_type = joint_meta.actuator_type or "position"
             act_meta = self._metadata.actuator_type_to_metadata.get(act_type)
             self._actuators[joint_id] = create_actuator(
+                joint_name,
                 joint_meta,
                 act_meta,
                 dt=self._dt,

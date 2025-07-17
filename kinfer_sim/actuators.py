@@ -118,7 +118,7 @@ class PositionActuator(Actuator):
             joint_max=joint_max,
         )
 
-    def clamp_position_target(self, target_position: float) -> float:
+    def get_clamped_position_target(self, target_position: float) -> float:
         """Clamp target position to be within joint limits."""
         return float(np.clip(target_position, self.joint_min, self.joint_max))
 
@@ -132,21 +132,20 @@ class PositionActuator(Actuator):
     ) -> float:
         # Clamp target position to joint limits
         target_position = cmd.get("position", 0.0)
-        clamped_position = self.clamp_position_target(target_position)
+        clamped_position = self.get_clamped_position_target(target_position)
 
         # Log warning if position was clamped
         if target_position != clamped_position:
             logger.warning(
-                "[%s] Clamped position from %.3f to %.3f (limits: [%.3f, %.3f])",
+                "%s's action %s was out of joint limits: [%.3f, %.3f]",
                 self.joint_name,
                 target_position,
-                clamped_position,
                 self.joint_min,
                 self.joint_max,
             )
 
         torque = (
-            self.kp * (clamped_position - qpos) + self.kd * (cmd.get("velocity", 0.0) - qvel) + cmd.get("torque", 0.0)
+            self.kp * (target_position - qpos) + self.kd * (cmd.get("velocity", 0.0) - qvel) + cmd.get("torque", 0.0)
         )
         if self.max_torque is not None:
             torque = float(np.clip(torque, -self.max_torque, self.max_torque))
