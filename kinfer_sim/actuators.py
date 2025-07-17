@@ -4,7 +4,7 @@ import logging
 import math
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Callable, Optional, Type, TypedDict
+from typing import Callable, Type, TypedDict
 
 import numpy as np
 from kscale.web.gen.api import ActuatorMetadataOutput, JointMetadataOutput
@@ -12,7 +12,7 @@ from kscale.web.gen.api import ActuatorMetadataOutput, JointMetadataOutput
 logger = logging.getLogger(__name__)
 
 
-def _as_float(value: str | float | None, *, default: Optional[float] = None) -> float:
+def _as_float(value: str | float | None, *, default: float | None = None) -> float:
     if value is None:
         if default is None:
             raise ValueError("Numeric metadata field is missing")
@@ -78,7 +78,7 @@ class Actuator(ABC):
 class PositionActuator(Actuator):
     """Plain PD controller with optional torque saturation."""
 
-    def __init__(self, *, kp: float, kd: float, max_torque: Optional[float] = None) -> None:
+    def __init__(self, *, kp: float, kd: float, max_torque: float | None = None) -> None:
         self.kp = kp
         self.kd = kd
         self.max_torque = max_torque
@@ -223,7 +223,7 @@ class FeetechActuator(Actuator):
         self.v_max = v_max
         self.a_max = a_max
         self.dt = dt
-        self._state: Optional[PlannerState] = None
+        self._state: PlannerState | None = None
         self.positive_deadband = positive_deadband
         self.negative_deadband = negative_deadband
 
@@ -294,6 +294,7 @@ def create_actuator(
     *,
     dt: float,
 ) -> Actuator:
+    """Create an actuator instance from metadata."""
     act_type = (joint_meta.actuator_type or "").lower()
     for prefix, cls in _actuator_registry.items():
         if act_type.startswith(prefix):
