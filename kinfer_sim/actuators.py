@@ -107,6 +107,8 @@ class PositionActuator(Actuator):
         *,
         dt: float,
     ) -> "PositionActuator":
+        if joint_meta.id is None:
+            raise ValueError(f"Joint {joint_name}: ID is not specified in metadata")
         max_torque = None
         if actuator_meta and actuator_meta.max_torque is not None:
             max_torque = float(actuator_meta.max_torque)
@@ -283,6 +285,8 @@ class FeetechActuator(Actuator):
         *,
         dt: float,
     ) -> "FeetechActuator":
+        if joint_meta.id is None:
+            raise ValueError(f"Joint {joint_name}: ID is not specified in metadata")
         if actuator_meta is None:
             raise ValueError("Feetech actuator metadata missing")
         return cls(
