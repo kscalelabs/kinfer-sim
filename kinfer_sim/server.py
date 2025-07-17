@@ -356,12 +356,16 @@ class SimulationServer:
         finally:
             # ───────────────────────── summary ───────────────────────────
             if self._sample_count:
-                mean_err = self._cumulative_error / self._sample_count
+                mean_pos_err = self._cumulative_error / self._sample_count
+                mean_vel_err = self._cumulative_vel_error / self._sample_count
                 logger.info(
                     "\n=========  RUN SUMMARY  =========\n"
-                    "Average XY position tracking error : %.4f m  (over %d samples)\n"
+                    "Average XY position tracking error : %.4f  m\n"
+                    "Average XY velocity tracking error : %.4f m/s\n"
+                    "Samples                               : %d\n"
                     "=================================\n",
-                    mean_err,
+                    mean_pos_err,
+                    mean_vel_err,
                     self._sample_count,
                 )
 
