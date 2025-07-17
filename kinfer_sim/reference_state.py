@@ -1,6 +1,7 @@
-from __future__ import annotations
+"""Utilities for tracking how well the robot follows commands."""
 
 from dataclasses import dataclass, field
+
 import numpy as np
 
 
@@ -26,8 +27,7 @@ class IdealPositionTracker:
         dt: float,
         heading_rad: float | None = None,
     ) -> None:
-        """
-        Integrate the body-frame (vx, vy) command into world coordinates.
+        """Integrate the body-frame (vx, vy) command into world coordinates.
 
         If ``heading_rad`` is supplied, use it for this step; otherwise the
         heading captured at ``reset`` is used (keeps API minimal).

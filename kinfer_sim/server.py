@@ -193,10 +193,12 @@ class SimulationServer:
 
         # reset tracker so that ideal and real start together
         quat = self.simulator._data.sensor(self._quat_name).data
-        init_yaw = float(np.arctan2(          # quick yaw extraction
-            2 * (quat[0] * quat[3] + quat[1] * quat[2]),
-            1 - 2 * (quat[2] ** 2 + quat[3] ** 2),
-        ))
+        init_yaw = float(
+            np.arctan2(  # quick yaw extraction
+                2 * (quat[0] * quat[3] + quat[1] * quat[2]),
+                1 - 2 * (quat[2] ** 2 + quat[3] ** 2),
+            )
+        )
         self._ideal_tracker.reset(tuple(self.simulator._data.qpos[:2]), heading_rad=init_yaw)
 
         logs: list[dict[str, np.ndarray]] | None = None
@@ -229,10 +231,12 @@ class SimulationServer:
 
                 # 2. Advance the ideal trajectory  (rotate cmd by *current* yaw)
                 quat_now = self.simulator._data.sensor(self._quat_name).data
-                yaw_now = float(np.arctan2(
-                    2 * (quat_now[0] * quat_now[3] + quat_now[1] * quat_now[2]),
-                    1 - 2 * (quat_now[2] ** 2 + quat_now[3] ** 2),
-                ))
+                yaw_now = float(
+                    np.arctan2(
+                        2 * (quat_now[0] * quat_now[3] + quat_now[1] * quat_now[2]),
+                        1 - 2 * (quat_now[2] ** 2 + quat_now[3] ** 2),
+                    )
+                )
                 self._ideal_tracker.step((vx, vy), ctrl_dt, heading_rad=yaw_now)
 
                 # ---------- world-frame commanded & actual velocities ----------
@@ -250,16 +254,16 @@ class SimulationServer:
                 real_xy = self.simulator._data.qpos[:2]
 
                 # ── X-axis signals ──────────────────────────────────────────
-                ideal_x   = float(self._ideal_tracker.pos[0])
-                actual_x  = float(real_xy[0])
-                error_x   = actual_x - ideal_x          # signed error
-                vx_cmd    = vx
+                ideal_x = float(self._ideal_tracker.pos[0])
+                actual_x = float(real_xy[0])
+                error_x = actual_x - ideal_x  # signed error
+                vx_cmd = vx
 
                 # ── Y-axis signals ──────────────────────────────────────────
-                ideal_y   = float(self._ideal_tracker.pos[1])
-                actual_y  = float(real_xy[1])
-                error_y   = actual_y - ideal_y
-                vy_cmd    = vy
+                ideal_y = float(self._ideal_tracker.pos[1])
+                actual_y = float(real_xy[1])
+                error_y = actual_y - ideal_y
+                vy_cmd = vy
 
                 # ── running mean of Euclidean error ──────────
                 self._cumulative_error += float(np.hypot(error_x, error_y))
@@ -274,17 +278,17 @@ class SimulationServer:
                     # One plot per axis; curves are grouped by the string key
                     self.simulator._viewer.push_plot_metrics(
                         scalars={
-                            "ideal_x":  ideal_x,
+                            "ideal_x": ideal_x,
                             "actual_x": actual_x,
-                            "vx_cmd":   vx_cmd,
+                            "vx_cmd": vx_cmd,
                         },
                         group="Metrics/X_Pos",
                     )
                     self.simulator._viewer.push_plot_metrics(
                         scalars={
-                            "ideal_y":  ideal_y,
+                            "ideal_y": ideal_y,
                             "actual_y": actual_y,
-                            "vy_cmd":   vy_cmd,
+                            "vy_cmd": vy_cmd,
                         },
                         group="Metrics/Y_Pos",
                     )
@@ -296,14 +300,14 @@ class SimulationServer:
                     # ───────── velocity plots ──────────
                     self.simulator._viewer.push_plot_metrics(
                         scalars={
-                            "cmd_vx":   cmd_vx_w,
+                            "cmd_vx": cmd_vx_w,
                             "actual_vx": act_vx_w,
                         },
                         group="Metrics/X_Vel",
                     )
                     self.simulator._viewer.push_plot_metrics(
                         scalars={
-                            "cmd_vy":   cmd_vy_w,
+                            "cmd_vy": cmd_vy_w,
                             "actual_vy": act_vy_w,
                         },
                         group="Metrics/Y_Vel",
