@@ -88,7 +88,7 @@ class PositionActuator(Actuator):
         max_torque: float | None = None,
         joint_min: float,
         joint_max: float,
-    ) -> None:  
+    ) -> None:
         self.joint_name = joint_name
         self.kp = kp
         self.kd = kd
