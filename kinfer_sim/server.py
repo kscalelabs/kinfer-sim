@@ -134,6 +134,8 @@ class SimulationServer:
         # ── aggregates for average-error plot ────────────────
         self._cumulative_error = 0.0
         self._sample_count = 0
+        # velocity-error aggregator
+        self._cumulative_vel_error = 0.0
 
         self._video_writer: VideoWriter | None = None
         if self._save_video:
@@ -233,6 +235,17 @@ class SimulationServer:
                 ))
                 self._ideal_tracker.step((vx, vy), ctrl_dt, heading_rad=yaw_now)
 
+                # ---------- world-frame commanded & actual velocities ----------
+                c, s = np.cos(yaw_now), np.sin(yaw_now)
+                cmd_vx_w = c * vx - s * vy
+                cmd_vy_w = s * vx + c * vy
+
+                act_vx_w = float(self.simulator._data.qvel[0])
+                act_vy_w = float(self.simulator._data.qvel[1])
+
+                err_vx = act_vx_w - cmd_vx_w
+                err_vy = act_vy_w - cmd_vy_w
+
                 # 3. Compute tracking error (Euclidean distance in the horizontal plane)
                 real_xy = self.simulator._data.qpos[:2]
 
@@ -253,6 +266,10 @@ class SimulationServer:
                 self._sample_count += 1
                 mean_err = self._cumulative_error / self._sample_count
 
+                # velocity error aggregation
+                self._cumulative_vel_error += float(np.hypot(err_vx, err_vy))
+                mean_vel_err = self._cumulative_vel_error / self._sample_count
+
                 if isinstance(self.simulator._viewer, QtViewer):
                     # One plot per axis; curves are grouped by the string key
                     self.simulator._viewer.push_plot_metrics(
@@ -260,7 +277,6 @@ class SimulationServer:
                             "ideal_x":  ideal_x,
                             "actual_x": actual_x,
                             "vx_cmd":   vx_cmd,
-                            "error_x":  error_x,
                         },
                         group="Metrics/X_Pos",
                     )
@@ -269,7 +285,6 @@ class SimulationServer:
                             "ideal_y":  ideal_y,
                             "actual_y": actual_y,
                             "vy_cmd":   vy_cmd,
-                            "error_y":  error_y,
                         },
                         group="Metrics/Y_Pos",
                     )
@@ -277,6 +292,25 @@ class SimulationServer:
                     self.simulator._viewer.push_plot_metrics(
                         scalars={"mean_pos_error": mean_err},
                         group="Metrics/Pos_Error_Avg",
+                    )
+                    # ───────── velocity plots ──────────
+                    self.simulator._viewer.push_plot_metrics(
+                        scalars={
+                            "cmd_vx":   cmd_vx_w,
+                            "actual_vx": act_vx_w,
+                        },
+                        group="Metrics/X_Vel",
+                    )
+                    self.simulator._viewer.push_plot_metrics(
+                        scalars={
+                            "cmd_vy":   cmd_vy_w,
+                            "actual_vy": act_vy_w,
+                        },
+                        group="Metrics/Y_Vel",
+                    )
+                    self.simulator._viewer.push_plot_metrics(
+                        scalars={"mean_vel_error": mean_vel_err},
+                        group="Metrics/Vel_Error_Avg",
                     )
 
                 # Plot policy inputs and outputs to the viewer
