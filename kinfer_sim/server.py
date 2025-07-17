@@ -30,6 +30,7 @@ from kinfer_sim.provider import (
     ModelProvider,
     SimpleJoystickInputState,
 )
+from kinfer_sim.reference_state import IdealPositionTracker
 from kinfer_sim.simulator import MujocoSimulator
 
 logger = logging.getLogger(__name__)
@@ -128,6 +129,7 @@ class SimulationServer:
         self._save_video = config.save_video
         self._save_logs = config.save_logs
         self._keyboard_state = keyboard_state
+        self._ideal_tracker = IdealPositionTracker()
 
         self._video_writer: VideoWriter | None = None
         if self._save_video:
@@ -183,6 +185,9 @@ class SimulationServer:
 
         carry = model_runner.init()
 
+        # reset tracker so that ideal and real start together
+        self._ideal_tracker.reset(tuple(self.simulator._data.qpos[:2]))
+
         logs: list[dict[str, np.ndarray]] | None = None
         if self._save_logs:
             logs = []
@@ -204,6 +209,51 @@ class SimulationServer:
                 # Offload blocking calls to the executor
                 output, carry = await loop.run_in_executor(None, model_runner.step, carry)
                 await loop.run_in_executor(None, model_runner.take_action, output)
+
+                # 1. Read *current* velocity command (metres/sec)
+                vx, vy = 0.0, 0.0
+                if self._keyboard_state.value:
+                    # Works for ControlVector / ExpandedControlVector layouts.
+                    vx, vy = self._keyboard_state.value[0], self._keyboard_state.value[1]
+
+                # 2. Advance the ideal trajectory
+                self._ideal_tracker.step((vx, vy), ctrl_dt)
+
+                # 3. Compute tracking error (Euclidean distance in the horizontal plane)
+                real_xy = self.simulator._data.qpos[:2]
+
+                # ── X-axis signals ──────────────────────────────────────────
+                ideal_x   = float(self._ideal_tracker.pos[0])
+                actual_x  = float(real_xy[0])
+                error_x   = actual_x - ideal_x          # signed error
+                vx_cmd    = vx
+
+                # ── Y-axis signals ──────────────────────────────────────────
+                ideal_y   = float(self._ideal_tracker.pos[1])
+                actual_y  = float(real_xy[1])
+                error_y   = actual_y - ideal_y
+                vy_cmd    = vy
+
+                if isinstance(self.simulator._viewer, QtViewer):
+                    # One plot per axis; curves are grouped by the string key
+                    self.simulator._viewer.push_plot_metrics(
+                        scalars={
+                            "ideal_x":  ideal_x,
+                            "actual_x": actual_x,
+                            "vx_cmd":   vx_cmd,
+                            "error_x":  error_x,
+                        },
+                        group="Metrics/X_Pos",
+                    )
+                    self.simulator._viewer.push_plot_metrics(
+                        scalars={
+                            "ideal_y":  ideal_y,
+                            "actual_y": actual_y,
+                            "vy_cmd":   vy_cmd,
+                            "error_y":  error_y,
+                        },
+                        group="Metrics/Y_Pos",
+                    )
 
                 # Plot policy inputs and outputs to the viewer
                 if isinstance(self.simulator._viewer, QtViewer):
