@@ -320,6 +320,17 @@ class SimulationServer:
             logger.error("Traceback: %s", traceback.format_exc())
 
         finally:
+            # ───────────────────────── summary ───────────────────────────
+            if self._sample_count:
+                mean_err = self._cumulative_error / self._sample_count
+                logger.info(
+                    "\n=========  RUN SUMMARY  =========\n"
+                    "Average XY position tracking error : %.4f m  (over %d samples)\n"
+                    "=================================\n",
+                    mean_err,
+                    self._sample_count,
+                )
+
             await self.stop()
 
             if self._video_writer is not None:
