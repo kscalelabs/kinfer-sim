@@ -6,7 +6,7 @@ import random
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, NotRequired, TypedDict, TypeVar
+from typing import Iterator, Literal, Mapping, NotRequired, TypedDict, TypeVar
 
 import mujoco
 import numpy as np
@@ -148,6 +148,29 @@ def get_viewer(
             viewer.set_camera(render_camera_name)
 
     return viewer
+
+
+@dataclass(slots=True)
+class SimulatorState:
+    """Immutable snapshot of the simulation at a single point in time."""
+
+    time: float
+    qpos: np.ndarray
+    qvel: np.ndarray
+
+    def as_dict(self) -> Mapping[str, object]:
+        """Quick serialisable view (JSON-friendly)."""
+        return {
+            "time": float(self.time),
+            "qpos": self.qpos.tolist(),
+            "qvel": self.qvel.tolist(),
+        }
+
+    def __iter__(self) -> Iterator[float | np.ndarray]:
+        yield from (self.time, self.qpos, self.qvel)
+
+    def __repr__(self) -> str:
+        return f"<SimulatorState t={self.time:.3f}s nq={self.qpos.size}>"
 
 
 class MujocoSimulator:
@@ -450,6 +473,14 @@ class MujocoSimulator:
     def sim_time(self) -> float:
         return self._sim_time
 
+    def get_state(self) -> SimulatorState:
+        """Return a copy of the current MuJoCo state."""
+        return SimulatorState(
+            time=float(self._data.time),
+            qpos=self._data.qpos.copy(),
+            qvel=self._data.qvel.copy(),
+        )
+
     def set_suspend_mode(self, suspend: bool) -> None:
         """Enable or disable suspend mode at runtime."""
         if suspend and not self._suspended and self._freejoint:
@@ -522,4 +553,10 @@ class MujocoSimulator:
 
     @property
     def timestep(self) -> float:
+        """The timestep of the simulation."""
         return self._model.opt.timestep
+
+    @property
+    def sim_decimation(self) -> int:
+        """Number of physics steps executed per control tick."""
+        return self._sim_decimation

@@ -293,15 +293,7 @@ async def serve(config: ServerConfig) -> None:
             get_model_metadata(api, config.mujoco_model_name),
         )
 
-    model_path = next(
-        (
-            path
-            for path in itertools.chain(
-                model_dir.glob("*.mjcf"),
-                model_dir.glob("*.xml"),
-            )
-        )
-    )
+    model_path = find_mjcf(model_dir)
 
     key_state: InputState
     default: Callable[[], Awaitable[None]] | None = None
@@ -352,6 +344,20 @@ async def serve(config: ServerConfig) -> None:
     )
 
     await server.start()
+
+
+def find_mjcf(model_dir: Path) -> Path:
+    """Return the primary MJCF/XML file in model_dir."""
+    try:
+        return next(
+            path
+            for path in itertools.chain(
+                model_dir.glob("*.mjcf"),
+                model_dir.glob("*.xml"),
+            )
+        )
+    except StopIteration as exc:
+        raise FileNotFoundError(f"No *.mjcf or *.xml found in {model_dir}") from exc
 
 
 async def run_server(config: ServerConfig) -> None:
