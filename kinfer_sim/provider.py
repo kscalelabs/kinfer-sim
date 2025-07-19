@@ -304,8 +304,6 @@ class ModelProvider(ModelProviderABC):
                 inputs[input_type] = self.get_joint_angular_velocities(metadata.joint_names)  # type: ignore[attr-defined]
             elif input_type == "initial_heading":
                 inputs[input_type] = np.array([self.initial_heading])
-            elif input_type == "quaternion":
-                inputs[input_type] = self.get_quaternion()
             elif input_type == "projected_gravity":
                 inputs[input_type] = self.get_projected_gravity()
             elif input_type == "accelerometer":
@@ -338,18 +336,11 @@ class ModelProvider(ModelProviderABC):
         self.arrays["joint_velocities"] = velocities_array
         return velocities_array
 
-    def get_quaternion(self) -> np.ndarray:
-        quat_name = self.quat_name
-        sensor = self.simulator._data.sensor(quat_name)
-        quat = sensor.data
-        # quat = np.array([quat[3], quat[0], quat[1], quat[2]], dtype=np.float32)
-        self.arrays["quaternion"] = quat
-        return quat
-
     def get_projected_gravity(self) -> np.ndarray:
         gravity = self.simulator._model.opt.gravity
-        quat = self.get_quaternion()
-        proj_gravity = rotate_vector_by_quat(gravity, quat, inverse=True)
+        quat_name = self.quat_name
+        sensor = self.simulator._data.sensor(quat_name)
+        proj_gravity = rotate_vector_by_quat(gravity, sensor.data, inverse=True)
         proj_gravity += np.random.normal(
             -self.simulator._projected_gravity_noise, self.simulator._projected_gravity_noise, proj_gravity.shape
         )
