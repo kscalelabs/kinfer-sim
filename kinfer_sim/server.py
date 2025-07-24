@@ -190,9 +190,12 @@ class SimulationServer:
             name in self._plots_w_joint_names and self._joint_names and len(flat) == len(self._joint_names)
         )
         if use_joint_names:
-            return {f"{name}_{jn}": float(v) for jn, v in zip(self._joint_names, flat)}
+            return {
+                f"{name}_{idx} - {joint_name}": float(val)
+                for idx, (joint_name, val) in enumerate(zip(self._joint_names, flat))
+            }
 
-        return {f"{name}_{i}": float(v) for i, v in enumerate(flat)}
+        return {f"{name}_{idx}": float(v) for idx, v in enumerate(flat)}
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
