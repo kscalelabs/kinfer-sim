@@ -128,7 +128,7 @@ class SimulationServer:
         self._save_video = config.save_video
         self._save_logs = config.save_logs
         self._keyboard_state = keyboard_state
-        self._joint_names: list[str] | None = self._load_joint_names()
+        self._joint_names: list[str] = self._load_joint_names()
         self._plots_w_joint_names: frozenset[str] = frozenset({"joint_angles", "joint_velocities", "action"})
 
         self._video_writer: VideoWriter | None = None
@@ -162,23 +162,21 @@ class SimulationServer:
         except (tarfile.TarError, FileNotFoundError):
             logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
 
-    def _load_joint_names(self) -> list[str] | None:
+    def _load_joint_names(self) -> list[str]:
         """Load joint names in order from the model metadata."""
         try:
             with tarfile.open(self._kinfer_path, "r:gz") as tar:
                 mf = tar.extractfile("metadata.json")
                 if not mf:
-                    logger.warning("metadata.json missing in %s", self._kinfer_path)
-                    return None
+                    raise ValueError(f"metadata.json missing in kinfer file: {self._kinfer_path}")
 
                 md = metadata_from_json(mf.read().decode("utf-8"))
-                if getattr(md, "joint_names", None):
-                    logger.info("Loaded %d joint names from model metadata", len(md.joint_names))
-                    return list(md.joint_names)
-                logger.warning("joint_names missing in model metadata")
+                if joint_names := getattr(md, "joint_names", None):
+                    logger.info("Loaded %d joint names from model metadata", len(joint_names))
+                    return list(joint_names)
+                raise ValueError(f"joint_names missing in model metadata for kinfer file: {self._kinfer_path}")
         except (tarfile.TarError, FileNotFoundError) as exc:
-            logger.warning("Failed to read kinfer metadata: %s", exc)
-        return None
+            raise ValueError(f"Failed to read kinfer metadata from {self._kinfer_path}: {exc}") from exc
 
     def _to_scalars(self, name: str, arr: np.ndarray) -> dict[str, float]:
         """Convert a 1-D array into `{legend_name: value}` pairs.
@@ -186,9 +184,7 @@ class SimulationServer:
         This is useful for including the joint names in the legend.
         """
         flat = arr.flatten()
-        use_joint_names = (
-            name in self._plots_w_joint_names and self._joint_names and len(flat) == len(self._joint_names)
-        )
+        use_joint_names = name in self._plots_w_joint_names and len(flat) == len(self._joint_names)
         if use_joint_names:
             return {
                 f"{name}_{idx} - {joint_name}": float(val)
