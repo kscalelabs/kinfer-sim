@@ -128,6 +128,7 @@ class SimulationServer:
         self._save_video = config.save_video
         self._save_logs = config.save_logs
         self._keyboard_state = keyboard_state
+        self._joint_names: list[str] | None = self._load_joint_names()
 
         self._video_writer: VideoWriter | None = None
         if self._save_video:
@@ -160,6 +161,48 @@ class SimulationServer:
         except (tarfile.TarError, FileNotFoundError):
             logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
 
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+    def _load_joint_names(self) -> list[str] | None:
+        """Read `metadata.json` inside the .kinfer archive only once."""
+        try:
+            with tarfile.open(self._kinfer_path, "r:gz") as tar:
+                mf = tar.extractfile("metadata.json")
+                if not mf:
+                    logger.warning("metadata.json missing in %s", self._kinfer_path)
+                    return None
+
+                md = metadata_from_json(mf.read().decode("utf-8"))
+                if getattr(md, "joint_names", None):
+                    logger.info(
+                        "Loaded %d joint names from model metadata", len(md.joint_names)
+                    )
+                    return list(md.joint_names)
+                logger.warning("joint_names not present in model metadata")
+        except (tarfile.TarError, FileNotFoundError) as exc:
+            logger.warning("Failed to read kinfer metadata: %s", exc)
+        return None
+
+    def _to_scalars(self, name: str, arr: np.ndarray) -> dict[str, float]:
+        """Convert a 1-D array into `{legend_name: value}` pairs.
+
+        - For joint-specific arrays we prefer `joint_name` in the legend.
+        - Fallbacks gracefully to indices if lengths don't match.
+        """
+        flat = arr.flatten()
+        if (
+            name in {"joint_angles", "joint_velocities", "action"}
+            and self._joint_names
+            and len(flat) == len(self._joint_names)
+        ):
+            return {
+                f"{name}_{jn}": float(v) for jn, v in zip(self._joint_names, flat)
+            }
+
+        # generic fallback
+        return {f"{name}_{i}": float(v) for i, v in enumerate(flat)}
+
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
         start_time = time.perf_counter()
@@ -178,27 +221,6 @@ class SimulationServer:
             keyboard_state=self._keyboard_state,
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
-
-        # Extract joint names from metadata for plotting
-        joint_names: list[str] | None = None
-        try:
-            with tarfile.open(self._kinfer_path, "r:gz") as tar:
-                metadata_file = tar.extractfile("metadata.json")
-                if metadata_file is not None:
-                    metadata = metadata_from_json(metadata_file.read().decode("utf-8"))
-                    if hasattr(metadata, "joint_names") and metadata.joint_names is not None:
-                        joint_names = metadata.joint_names
-                        print("=== Action Vector to Joint Name Mapping ===")
-                        for i, joint_name in enumerate(joint_names):
-                            print(f"Index {i:2d}: {joint_name}")
-                        print(f"Total joints: {len(joint_names)}")
-                        print("=" * 45)
-                    else:
-                        logger.warning("No joint_names found in model metadata")
-                else:
-                    logger.warning("Could not extract metadata.json from kinfer file")
-        except (tarfile.TarError, FileNotFoundError) as e:
-            logger.warning("Could not read joint mapping from kinfer file: %s", e)
 
         loop = asyncio.get_running_loop()
 
@@ -228,35 +250,9 @@ class SimulationServer:
 
                 # Plot policy inputs and outputs to the viewer
                 if isinstance(self.simulator._viewer, QtViewer):
-                    for input_name, input_array in model_provider.arrays.items():
-                        # Use joint names for joint-related arrays, indices for others
-                        if input_name in ["joint_angles", "joint_velocities", "action"] and joint_names is not None:
-                            # Use joint names for joint-related data
-                            if len(input_array.flatten()) == len(joint_names):
-                                input_scalars = {
-                                    f"{input_name}_{joint_name}": float(val)
-                                    for joint_name, val in zip(joint_names, input_array.flatten())
-                                }
-                            else:
-                                # Fallback to indices if length mismatch
-                                logger.warning(
-                                    "Length mismatch for %s: array size %d vs joint names %d",
-                                    input_name,
-                                    len(input_array.flatten()),
-                                    len(joint_names),
-                                )
-                                input_scalars = {
-                                    f"{input_name}_{idx}": float(val) for idx, val in enumerate(input_array.flatten())
-                                }
-                        else:
-                            # Use indices for non-joint data
-                            input_scalars = {
-                                f"{input_name}_{idx}": float(val) for idx, val in enumerate(input_array.flatten())
-                            }
-
+                    for n, a in model_provider.arrays.items():
                         self.simulator._viewer.push_plot_metrics(
-                            scalars=input_scalars,
-                            group=f"{input_name}",
+                            scalars=self._to_scalars(n, a), group=n
                         )
 
                 num_steps += 1
