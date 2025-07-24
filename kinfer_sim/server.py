@@ -129,6 +129,7 @@ class SimulationServer:
         self._save_logs = config.save_logs
         self._keyboard_state = keyboard_state
         self._joint_names: list[str] | None = self._load_joint_names()
+        self._plots_w_joint_names: frozenset[str] = frozenset({"joint_angles", "joint_velocities", "action"})
 
         self._video_writer: VideoWriter | None = None
         if self._save_video:
@@ -161,11 +162,8 @@ class SimulationServer:
         except (tarfile.TarError, FileNotFoundError):
             logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
 
-    # ------------------------------------------------------------------
-    # Private helpers
-    # ------------------------------------------------------------------
     def _load_joint_names(self) -> list[str] | None:
-        """Read `metadata.json` inside the .kinfer archive only once."""
+        """Load joint names in order from the model metadata."""
         try:
             with tarfile.open(self._kinfer_path, "r:gz") as tar:
                 mf = tar.extractfile("metadata.json")
@@ -175,11 +173,9 @@ class SimulationServer:
 
                 md = metadata_from_json(mf.read().decode("utf-8"))
                 if getattr(md, "joint_names", None):
-                    logger.info(
-                        "Loaded %d joint names from model metadata", len(md.joint_names)
-                    )
+                    logger.info("Loaded %d joint names from model metadata", len(md.joint_names))
                     return list(md.joint_names)
-                logger.warning("joint_names not present in model metadata")
+                logger.warning("joint_names missing in model metadata")
         except (tarfile.TarError, FileNotFoundError) as exc:
             logger.warning("Failed to read kinfer metadata: %s", exc)
         return None
@@ -187,20 +183,15 @@ class SimulationServer:
     def _to_scalars(self, name: str, arr: np.ndarray) -> dict[str, float]:
         """Convert a 1-D array into `{legend_name: value}` pairs.
 
-        - For joint-specific arrays we prefer `joint_name` in the legend.
-        - Fallbacks gracefully to indices if lengths don't match.
+        This is useful for including the joint names in the legend.
         """
         flat = arr.flatten()
-        if (
-            name in {"joint_angles", "joint_velocities", "action"}
-            and self._joint_names
-            and len(flat) == len(self._joint_names)
-        ):
-            return {
-                f"{name}_{jn}": float(v) for jn, v in zip(self._joint_names, flat)
-            }
+        use_joint_names = (
+            name in self._plots_w_joint_names and self._joint_names and len(flat) == len(self._joint_names)
+        )
+        if use_joint_names:
+            return {f"{name}_{jn}": float(v) for jn, v in zip(self._joint_names, flat)}
 
-        # generic fallback
         return {f"{name}_{i}": float(v) for i, v in enumerate(flat)}
 
     async def _simulation_loop(self) -> None:
@@ -251,9 +242,7 @@ class SimulationServer:
                 # Plot policy inputs and outputs to the viewer
                 if isinstance(self.simulator._viewer, QtViewer):
                     for n, a in model_provider.arrays.items():
-                        self.simulator._viewer.push_plot_metrics(
-                            scalars=self._to_scalars(n, a), group=n
-                        )
+                        self.simulator._viewer.push_plot_metrics(scalars=self._to_scalars(n, a), group=n)
 
                 num_steps += 1
                 if logs is not None:
