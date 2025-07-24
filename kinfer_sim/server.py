@@ -163,20 +163,25 @@ class SimulationServer:
             logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
 
     def _load_joint_names(self) -> list[str]:
-        """Load joint names in order from the model metadata."""
+        """Return joint names listed in the .kinfer metadata, or raise."""
+        # Load metadata from the kinfer archive.
         try:
             with tarfile.open(self._kinfer_path, "r:gz") as tar:
-                mf = tar.extractfile("metadata.json")
-                if not mf:
-                    raise ValueError(f"metadata.json missing in kinfer file: {self._kinfer_path}")
+                metadata_file = tar.extractfile("metadata.json")
+                if metadata_file is None:
+                    raise FileNotFoundError("'metadata.json' not found inside archive")
 
-                md = metadata_from_json(mf.read().decode("utf-8"))
-                if joint_names := getattr(md, "joint_names", None):
-                    logger.info("Loaded %d joint names from model metadata", len(joint_names))
-                    return list(joint_names)
-                raise ValueError(f"joint_names missing in model metadata for kinfer file: {self._kinfer_path}")
+                metadata = metadata_from_json(metadata_file.read().decode("utf-8"))
         except (tarfile.TarError, FileNotFoundError) as exc:
-            raise ValueError(f"Failed to read kinfer metadata from {self._kinfer_path}: {exc}") from exc
+            raise ValueError(f"Could not load metadata from {self._kinfer_path}: {exc}") from exc
+
+        # Extract joint names from the metadata.
+        joint_names = getattr(metadata, "joint_names", None)
+        if not joint_names:
+            raise ValueError(f"'joint_names' missing in metadata for {self._kinfer_path}")
+
+        logger.info("Loaded %d joint names from model metadata", len(joint_names))
+        return list(joint_names)
 
     def _to_scalars(self, name: str, arr: np.ndarray) -> dict[str, float]:
         """Convert a 1-D array into `{legend_name: value}` pairs.
