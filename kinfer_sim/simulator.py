@@ -199,6 +199,7 @@ class MujocoSimulator:
         integrator: str = "implicitfast",
         solver: str = "cg",
         camera: str | None = None,
+        free_camera: bool = True,
         frame_width: int = 640,
         frame_height: int = 480,
     ) -> None:
@@ -230,6 +231,7 @@ class MujocoSimulator:
         self._update_pd_every_n_steps = max(1, int((1.0 / pd_update_frequency) / self._dt))
         self._step = 0
         self._camera = camera
+        self._free_camera = free_camera
 
         # Gets the sim decimation.
         if (control_frequency := self._metadata.control_frequency) is None:
@@ -317,6 +319,7 @@ class MujocoSimulator:
             render_contact_force=False,
             render_contact_point=False,
             render_camera_name=self._camera,
+            render_track_body_id=(None if self._free_camera else 0),
             mode=self._render_mode,
         )
 

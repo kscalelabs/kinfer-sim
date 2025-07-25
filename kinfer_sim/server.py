@@ -63,6 +63,7 @@ class ServerConfig(tap.TypedArgs):
     save_path: str = tap.arg(default="logs", help="Path to save logs")
     save_video: bool = tap.arg(default=False, help="Save video")
     save_logs: bool = tap.arg(default=False, help="Save logs")
+    free_camera: bool = tap.arg(default=False, help="Free camera")
 
     # Model settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
@@ -114,6 +115,7 @@ class SimulationServer:
             pd_update_frequency=config.pd_update_frequency,
             mujoco_scene=config.mujoco_scene,
             camera=config.camera,
+            free_camera=config.free_camera,
             frame_width=config.frame_width,
             frame_height=config.frame_height,
         )
