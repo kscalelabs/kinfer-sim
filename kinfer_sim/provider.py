@@ -179,9 +179,9 @@ class ControlVectorInputState(InputState):
         elif key == "s":
             self.value[0] -= self.STEP_SIZE
         elif key == "a":
-            self.value[1] -= self.STEP_SIZE
-        elif key == "d":
             self.value[1] += self.STEP_SIZE
+        elif key == "d":
+            self.value[1] -= self.STEP_SIZE
         elif key == "q":
             self.value[2] -= self.STEP_SIZE
         elif key == "e":
@@ -203,9 +203,9 @@ class ExpandedControlVectorInputState(InputState):
         elif key == "s":
             self.value[0] -= self.STEP_SIZE
         elif key == "a":
-            self.value[1] -= self.STEP_SIZE
-        elif key == "d":
             self.value[1] += self.STEP_SIZE
+        elif key == "d":
+            self.value[1] -= self.STEP_SIZE
         elif key == "q":
             self.value[2] -= self.STEP_SIZE
         elif key == "e":
