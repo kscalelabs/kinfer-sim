@@ -49,6 +49,7 @@ class ServerConfig(tap.TypedArgs):
     pd_update_frequency: float = tap.arg(default=1000.0, help="PD update frequency for the actuators (Hz)")
     no_gravity: bool = tap.arg(default=False, help="Enable gravity")
     start_height: float = tap.arg(default=1.1, help="Start height")
+    initial_quat: str | None = tap.arg(default=None, help="Initial quaternion (w, x, y, z)")
     suspend: bool = tap.arg(default=False, help="Suspend robot base in place to prevent falling")
     quat_name: str = tap.arg(default="imu_site_quat", help="Name of the quaternion sensor")
     acc_name: str = tap.arg(default="imu_acc", help="Name of the accelerometer sensor")
@@ -94,6 +95,14 @@ class SimulationServer:
         config: ServerConfig,
         keyboard_state: InputState,
     ) -> None:
+        initial_quat_str = config.initial_quat
+        if initial_quat_str is not None:
+            initial_quat = tuple(float(x) for x in initial_quat_str.split(","))
+            if len(initial_quat) != 4:
+                raise ValueError(f"Invalid initial quaternion: {initial_quat_str}")
+        else:
+            initial_quat = (0.0, 0.0, 0.0, 1.0)
+
         self.simulator = MujocoSimulator(
             model_path=model_path,
             model_metadata=model_metadata,
@@ -101,6 +110,7 @@ class SimulationServer:
             gravity=not config.no_gravity,
             render_mode="offscreen" if config.no_render else "window",
             start_height=config.start_height,
+            initial_quat=initial_quat,
             suspended=config.suspend,
             command_delay_min=config.command_delay_min,
             command_delay_max=config.command_delay_max,

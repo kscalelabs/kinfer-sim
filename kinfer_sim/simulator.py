@@ -183,6 +183,7 @@ class MujocoSimulator:
         render_mode: Literal["window", "offscreen"] = "window",
         freejoint: bool = True,
         start_height: float = 1.5,
+        initial_quat: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
         suspended: bool = False,
         command_delay_min: float | None = None,
         command_delay_max: float | None = None,
@@ -291,7 +292,7 @@ class MujocoSimulator:
         # Initialize velocities and accelerations to zero
         if self._freejoint:
             self._data.qpos[:3] = np.array([0.0, 0.0, self._start_height])
-            self._data.qpos[3:7] = np.array([0.0, 0.0, 0.0, 1.0])
+            self._data.qpos[3:7] = np.array(initial_quat)
             self._data.qpos[7:] = np.zeros_like(self._data.qpos[7:])
         else:
             self._data.qpos[:] = np.zeros_like(self._data.qpos)
