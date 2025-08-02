@@ -183,7 +183,7 @@ class MujocoSimulator:
         render_mode: Literal["window", "offscreen"] = "window",
         freejoint: bool = True,
         start_height: float = 1.5,
-        initial_quat: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 1.0),
+        initial_quat: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.0),
         suspended: bool = False,
         command_delay_min: float | None = None,
         command_delay_max: float | None = None,

@@ -101,8 +101,7 @@ class SimulationServer:
             if len(initial_quat) != 4:
                 raise ValueError(f"Invalid initial quaternion: {initial_quat_str}")
         else:
-            initial_quat = (0.0, 0.0, 0.0, 1.0)
-
+            initial_quat = (1.0, 0.0, 0.0, 0.0)
         self.simulator = MujocoSimulator(
             model_path=model_path,
             model_metadata=model_metadata,
