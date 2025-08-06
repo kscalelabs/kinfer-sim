@@ -173,8 +173,6 @@ class SimulationServer:
         except (tarfile.TarError, FileNotFoundError):
             logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
 
-
-
     def _to_scalars(self, name: str, arr: np.ndarray) -> dict[str, float]:
         """Convert a 1-D array into `{legend_name: value}` pairs.
 
