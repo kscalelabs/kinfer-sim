@@ -139,7 +139,7 @@ class SimulationServer:
         self._save_video = config.save_video
         self._save_logs = config.save_logs
         self._keyboard_state = keyboard_state
-        self._joint_names: list[str] = self._load_joint_names()
+        self._joint_names: list[str] = load_joint_names(self._kinfer_path)
         self._plots_w_joint_names: frozenset[str] = frozenset({"joint_angles", "joint_velocities", "action"})
 
         self._video_writer: VideoWriter | None = None
@@ -173,26 +173,7 @@ class SimulationServer:
         except (tarfile.TarError, FileNotFoundError):
             logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
 
-    def _load_joint_names(self) -> list[str]:
-        """Return joint names listed in the .kinfer metadata, or raise."""
-        # Load metadata from the kinfer archive.
-        try:
-            with tarfile.open(self._kinfer_path, "r:gz") as tar:
-                metadata_file = tar.extractfile("metadata.json")
-                if metadata_file is None:
-                    raise FileNotFoundError("'metadata.json' not found inside archive")
 
-                metadata = metadata_from_json(metadata_file.read().decode("utf-8"))
-        except (tarfile.TarError, FileNotFoundError) as exc:
-            raise ValueError(f"Could not load metadata from {self._kinfer_path}: {exc}") from exc
-
-        # Extract joint names from the metadata.
-        joint_names = getattr(metadata, "joint_names", None)
-        if not joint_names:
-            raise ValueError(f"'joint_names' missing in metadata for {self._kinfer_path}")
-
-        logger.info("Loaded %d joint names from model metadata", len(joint_names))
-        return list(joint_names)
 
     def _to_scalars(self, name: str, arr: np.ndarray) -> dict[str, float]:
         """Convert a 1-D array into `{legend_name: value}` pairs.
@@ -416,6 +397,26 @@ def runner(args: ServerConfig) -> None:
 
 def main() -> None:
     tap.Parser(ServerConfig).bind(runner).run()
+
+
+def load_joint_names(kinfer_path: str | Path) -> list[str]:
+    """Return the ordered joint-name list stored in a .kinfer archive."""
+    kinfer_path = Path(kinfer_path)
+    try:
+        with tarfile.open(kinfer_path, "r:gz") as tar:
+            metadata_file = tar.extractfile("metadata.json")
+            if metadata_file is None:
+                raise FileNotFoundError("'metadata.json' not found in archive")
+            metadata = metadata_from_json(metadata_file.read().decode("utf-8"))
+    except (tarfile.TarError, FileNotFoundError) as exc:
+        raise ValueError(f"Could not read metadata from {kinfer_path}: {exc}") from exc
+
+    joint_names = getattr(metadata, "joint_names", None)
+    if not joint_names:
+        raise ValueError(f"'joint_names' missing in metadata for {kinfer_path}")
+
+    logger.info("Loaded %d joint names from model metadata", len(joint_names))
+    return list(joint_names)
 
 
 if __name__ == "__main__":
