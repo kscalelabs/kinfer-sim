@@ -84,7 +84,7 @@ def get_solver(solver: str) -> mujoco.mjtSolver:
 
 def get_viewer(
     mj_model: mujoco.MjModel,
-    render_with_glfw: bool,
+    render_with_glfw: bool | None = None,
     render_width: int = 640,
     render_height: int = 480,
     render_distance: float = 3.5,
@@ -105,7 +105,7 @@ def get_viewer(
     if mode is None:
         mode = "window" if save_path is None else "offscreen"
 
-    if (render_with_glfw := render_with_glfw) is None:
+    if render_with_glfw is None:
         render_with_glfw = mode == "window"
 
     viewer: QtViewer | DefaultMujocoViewer
@@ -131,6 +131,7 @@ def get_viewer(
     else:
         viewer = DefaultMujocoViewer(
             mj_model,
+            data=mj_data,
             width=render_width,
             height=render_height,
         )
@@ -312,7 +313,7 @@ class MujocoSimulator:
         self._viewer = get_viewer(
             mj_model=self._model,
             mj_data=self._data,
-            render_with_glfw=True,
+            render_with_glfw=self._render_mode == "window",
             render_width=frame_width,
             render_height=frame_height,
             render_shadow=False,
