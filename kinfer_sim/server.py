@@ -23,7 +23,6 @@ from kscale.web.utils import get_robots_dir, should_refresh_file
 from kinfer_sim.provider import (
     CombinedInputState,
     ControlVectorInputState,
-    ExpandedControlVectorInputState,
     GenericOHEInputState,
     InputState,
     JoystickInputState,
@@ -68,8 +67,8 @@ class ServerConfig(tap.TypedArgs):
 
     # Model settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
-    command_type: Literal["joystick", "simple_joystick", "control_vector", "expanded_control_vector"] = tap.arg(
-        default="expanded_control_vector", help="Type of command to use"
+    command_type: Literal["joystick", "simple_joystick", "control_vector"] = tap.arg(
+        default="control_vector", help="Type of command to use"
     )
 
     keyframes: int | None = tap.arg(default=None, help="Number of keyframe animations to append to command")
@@ -311,13 +310,16 @@ async def get_model_metadata(api: K, model_name: str, cache: bool = True) -> Rob
 
 
 async def serve(config: ServerConfig) -> None:
-    async with K() as api:
-        model_dir, model_metadata = await asyncio.gather(
-            api.download_and_extract_urdf(config.mujoco_model_name, cache=(not config.no_cache)),
-            get_model_metadata(api, config.mujoco_model_name),
-        )
-
-    model_path = find_mjcf(model_dir)
+    try:
+        with tarfile.open(config.kinfer_path, "r:gz") as tar:
+            metadata_file = tar.extractfile("metadata.json")
+            if metadata_file is None:
+                raise ValueError("metadata.json not found in kinfer file")
+            metadata = metadata_from_json(metadata_file.read().decode("utf-8"))
+            if metadata.num_commands is None:  # type: ignore[attr-defined]
+                raise ValueError("num_commands not specified in model metadata")
+    except (tarfile.TarError, FileNotFoundError):
+        raise ValueError(f"Could not read kinfer file: {config.kinfer_path}")
 
     key_state: InputState
     default: Callable[[], Awaitable[None]] | None = None
@@ -335,10 +337,7 @@ async def serve(config: ServerConfig) -> None:
             key_state.value = [1, 0, 0, 0]
 
     elif config.command_type == "control_vector":
-        key_state = ControlVectorInputState()
-        default = None
-    elif config.command_type == "expanded_control_vector":
-        key_state = ExpandedControlVectorInputState()
+        key_state = ControlVectorInputState(model_num_commands=metadata.num_commands)
         default = None
     else:
         raise ValueError(f"Invalid command type: {config.command_type}")
@@ -359,6 +358,14 @@ async def serve(config: ServerConfig) -> None:
         keyboard_controller = KeyboardController(key_handler, default=default)
 
         await keyboard_controller.start()
+
+    async with K() as api:
+        model_dir, model_metadata = await asyncio.gather(
+            api.download_and_extract_urdf(config.mujoco_model_name, cache=(not config.no_cache)),
+            get_model_metadata(api, config.mujoco_model_name),
+        )
+
+    model_path = find_mjcf(model_dir)
 
     server = SimulationServer(
         model_path=model_path,
