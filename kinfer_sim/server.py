@@ -2,12 +2,12 @@
 
 import asyncio
 import itertools
+import json
 import logging
 import tarfile
 import time
 import traceback
 from pathlib import Path
-import json
 from typing import Awaitable, Callable, Literal
 
 import colorlogging
@@ -355,7 +355,7 @@ async def serve(config: ServerConfig) -> None:
         key_state = ExpandedControlVectorInputState()
         default = None
     elif config.command_type == "unified":
-        # 13-dim vector expected by the walking model exported in ksim/examples/kbot
+        # 16-dim vector expected by the walking model exported in ksim/examples/kbot
         key_state = UnifiedControlVectorInputState()
         default = None
     else:

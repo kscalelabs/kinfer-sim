@@ -265,13 +265,6 @@ class UnifiedControlVectorInputState(InputState):
             self.value[2] -= self.STEP_SIZE
         elif key == "e":
             self.value[2] += self.STEP_SIZE
-        # Optional: simple arm pose raise/lower with r/f (affect first two arm joints)
-        elif key == "r":
-            self.value[3] += self.STEP_SIZE
-            self.value[4] += self.STEP_SIZE
-        elif key == "f":
-            self.value[3] -= self.STEP_SIZE
-            self.value[4] -= self.STEP_SIZE
 
 
 class GenericOHEInputState(InputState):
