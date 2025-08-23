@@ -29,6 +29,7 @@ from kinfer_sim.provider import (
     JoystickInputState,
     ModelProvider,
     SimpleJoystickInputState,
+    UnifiedControlVectorInputState,
 )
 from kinfer_sim.simulator import MujocoSimulator
 
@@ -68,9 +69,13 @@ class ServerConfig(tap.TypedArgs):
 
     # Model settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
-    command_type: Literal["joystick", "simple_joystick", "control_vector", "expanded_control_vector"] = tap.arg(
-        default="expanded_control_vector", help="Type of command to use"
-    )
+    command_type: Literal[
+        "joystick",
+        "simple_joystick",
+        "control_vector",
+        "expanded_control_vector",
+        "unified",
+    ] = tap.arg(default="expanded_control_vector", help="Type of command to use")
 
     keyframes: int | None = tap.arg(default=None, help="Number of keyframe animations to append to command")
 
@@ -339,6 +344,10 @@ async def serve(config: ServerConfig) -> None:
         default = None
     elif config.command_type == "expanded_control_vector":
         key_state = ExpandedControlVectorInputState()
+        default = None
+    elif config.command_type == "unified":
+        # 13-dim vector expected by the walking model exported in ksim/examples/kbot
+        key_state = UnifiedControlVectorInputState()
         default = None
     else:
         raise ValueError(f"Invalid command type: {config.command_type}")
