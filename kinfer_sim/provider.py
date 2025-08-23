@@ -220,6 +220,53 @@ class ExpandedControlVectorInputState(InputState):
             self.value[5] -= self.STEP_SIZE
 
 
+class UnifiedControlVectorInputState(InputState):
+    """State to hold and modify control vector commands based on keyboard input.
+
+    Contains 16 commands, but only the first `model_num_commands` are used:
+    - [0] x linear velocity [m/s]
+    - [1] y linear velocity [m/s]
+    - [2] z angular velocity [rad/s]
+    - [3] base height offset [m]
+    - [4] base roll [rad]
+    - [5] base pitch [rad]
+    - [6] right shoulder pitch [rad]
+    - [7] right shoulder roll [rad]
+    - [8] right elbow pitch [rad]
+    - [9] right elbow roll [rad]
+    - [10] right wrist pitch [rad]
+    - [11] left shoulder pitch [rad]
+    - [12] left shoulder roll [rad]
+    - [13] left elbow pitch [rad]
+    - [14] left elbow roll [rad]
+    - [15] left wrist pitch [rad]
+    """
+
+    value: list[float]
+    STEP_SIZE: float = 0.1
+
+    def __init__(self) -> None:
+        # 2 (linvel, yaw) + 1 (angvel) + 10 (arm positions)
+        self.value = [0.0] * 16
+
+    async def update(self, key: str) -> None:
+        # Forward/back adjust linear velocity
+        if key == "w":
+            self.value[0] += self.STEP_SIZE
+        elif key == "s":
+            self.value[0] -= self.STEP_SIZE
+        # Yaw heading left/right
+        elif key == "a":
+            self.value[1] -= self.STEP_SIZE
+        elif key == "d":
+            self.value[1] += self.STEP_SIZE
+        # Angular velocity yaw (rate)
+        elif key == "q":
+            self.value[2] -= self.STEP_SIZE
+        elif key == "e":
+            self.value[2] += self.STEP_SIZE
+
+
 class GenericOHEInputState(InputState):
     """State to hold and modify control vector commands based on keyboard input."""
 
