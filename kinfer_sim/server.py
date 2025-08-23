@@ -7,6 +7,7 @@ import tarfile
 import time
 import traceback
 from pathlib import Path
+import json
 from typing import Awaitable, Callable, Literal
 
 import colorlogging
@@ -44,6 +45,10 @@ class ServerConfig(tap.TypedArgs):
     mujoco_scene: str = tap.arg(default="smooth", help="Mujoco scene to use")
     no_cache: bool = tap.arg(default=False, help="Don't use cached metadata")
     debug: bool = tap.arg(default=False, help="Enable debug logging")
+    local_model_dir: str | None = tap.arg(
+        default=None,
+        help="Path to local robot directory containing metadata.json and *.mjcf/*.xml (bypass K API)",
+    )
 
     # Physics settings
     dt: float = tap.arg(default=0.0001, help="Simulation timestep")
@@ -316,11 +321,15 @@ async def get_model_metadata(api: K, model_name: str, cache: bool = True) -> Rob
 
 
 async def serve(config: ServerConfig) -> None:
-    async with K() as api:
-        model_dir, model_metadata = await asyncio.gather(
-            api.download_and_extract_urdf(config.mujoco_model_name, cache=(not config.no_cache)),
-            get_model_metadata(api, config.mujoco_model_name),
-        )
+    if config.local_model_dir:
+        model_dir = Path(config.local_model_dir).expanduser().resolve()
+        model_metadata = load_local_model_metadata(model_dir)
+    else:
+        async with K() as api:
+            model_dir, model_metadata = await asyncio.gather(
+                api.download_and_extract_urdf(config.mujoco_model_name, cache=(not config.no_cache)),
+                get_model_metadata(api, config.mujoco_model_name),
+            )
 
     model_path = find_mjcf(model_dir)
 
@@ -424,6 +433,27 @@ def load_joint_names(kinfer_path: str | Path) -> list[str]:
 
     logger.info("Loaded %d joint names from model metadata", len(joint_names))
     return list(joint_names)
+
+
+def load_local_model_metadata(model_dir: Path) -> RobotURDFMetadataOutput:
+    """Load and validate local model metadata from ``metadata.json``.
+
+    Coerces numeric actuator fields to strings to satisfy the schema.
+    """
+    metadata_path = model_dir / "metadata.json"
+    if not metadata_path.exists():
+        raise FileNotFoundError(f"metadata.json not found in {model_dir}")
+
+    raw = json.loads(metadata_path.read_text())
+    act_meta = raw.get("actuator_type_to_metadata")
+    if isinstance(act_meta, dict):
+        for _, v in act_meta.items():
+            if isinstance(v, dict):
+                for k2, v2 in list(v.items()):
+                    if isinstance(v2, (int, float)):
+                        v[k2] = str(v2)
+
+    return RobotURDFMetadataOutput.model_validate(raw)
 
 
 if __name__ == "__main__":
