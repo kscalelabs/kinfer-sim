@@ -17,7 +17,7 @@ from askin import KeyboardController
 from kinfer.rust_bindings import PyModelRunner, metadata_from_json
 from kmv.app.viewer import QtViewer
 from kmv.utils.logging import VideoWriter, save_logs
-from kscale import K
+from kscale.web.clients.client import WWWClient as K
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
@@ -80,7 +80,7 @@ class ServerConfig(tap.TypedArgs):
         "control_vector",
         "expanded_control_vector",
         "unified",
-    ] = tap.arg(default="expanded_control_vector", help="Type of command to use")
+    ] = tap.arg(default="control_vector", help="Type of command to use")
 
     keyframes: int | None = tap.arg(default=None, help="Number of keyframe animations to append to command")
 
