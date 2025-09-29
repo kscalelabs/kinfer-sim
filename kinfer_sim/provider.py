@@ -165,59 +165,82 @@ class SimpleJoystickInputState(InputState):
 
 
 class ControlVectorInputState(InputState):
-    """State to hold and modify control vector commands based on keyboard input."""
+    """State to hold and modify control vector commands based on keyboard input.
+    
+    Contains 16 commands, but only the first `model_num_commands` are used:
+    - [0] x linear velocity [m/s]
+    - [1] y linear velocity [m/s]
+    - [2] z angular velocity [rad/s]
+    - [3] base height offset [m]
+    - [4] base roll [rad]
+    - [5] base pitch [rad]
+    - [6] right shoulder pitch [rad]
+    - [7] right shoulder roll [rad]
+    - [8] right elbow pitch [rad]
+    - [9] right elbow roll [rad]
+    - [10] right wrist pitch [rad]
+    - [11] left shoulder pitch [rad]
+    - [12] left shoulder roll [rad]
+    - [13] left elbow pitch [rad]
+    - [14] left elbow roll [rad]
+    - [15] left wrist pitch [rad]
+    """
 
-    value: list[float]
-    STEP_SIZE: float = 0.1
+    model_num_commands: int
+    _value: list[float]
 
-    def __init__(self) -> None:
-        self.value = [0.0, 0.0, 0.0]  # x linear, y linear, z angular
+    def __init__(self, model_num_commands: int) -> None:
+        self.model_num_commands = model_num_commands
+        self._value = [0.0] * 16
+
+    @property
+    def value(self) -> list[float]:
+        """Get the control vector values up to the model's expected command length."""
+        return self._value[:self.model_num_commands]
+
+    @value.setter
+    def value(self, new_value: list[float]) -> None:
+        """Set the control vector values. Auto pads with zeros the expected command length."""
+        if len(new_value) > len(self._value):
+            raise ValueError(f"New value length {len(new_value)} exceeds maximum length {len(self._value)}")
+        self._value = new_value + [0.0] * (len(self._value) - len(new_value))
 
     async def update(self, key: str) -> None:
-        if key == "w":
-            self.value[0] += self.STEP_SIZE
+        # reset
+        if key == "0":
+            self._value = [0.0 for _ in self._value]
+
+        # lin vel
+        elif key == "w":
+            self._value[0] += 0.1
         elif key == "s":
-            self.value[0] -= self.STEP_SIZE
+            self._value[0] -= 0.1
         elif key == "a":
-            self.value[1] += self.STEP_SIZE
+            self._value[1] += 0.1
         elif key == "d":
-            self.value[1] -= self.STEP_SIZE
+            self._value[1] -= 0.1
+
+        # ang vel
         elif key == "q":
-            self.value[2] -= self.STEP_SIZE
+            self._value[2] += 0.1
         elif key == "e":
-            self.value[2] += self.STEP_SIZE
+            self._value[2] -= 0.1
 
-
-class ExpandedControlVectorInputState(InputState):
-    """State to hold and modify control vector commands based on keyboard input."""
-
-    value: list[float]
-    STEP_SIZE: float = 0.1
-
-    def __init__(self) -> None:
-        self.value = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]  # x linear, y linear, yaw, base height, roll, pitch
-
-    async def update(self, key: str) -> None:
-        if key == "w":
-            self.value[0] += self.STEP_SIZE
-        elif key == "s":
-            self.value[0] -= self.STEP_SIZE
-        elif key == "a":
-            self.value[1] += self.STEP_SIZE
-        elif key == "d":
-            self.value[1] -= self.STEP_SIZE
-        elif key == "q":
-            self.value[2] -= self.STEP_SIZE
-        elif key == "e":
-            self.value[2] += self.STEP_SIZE
+        # base height
+        elif key == "=":
+            self._value[3] += 0.05
+        elif key == "-":
+            self._value[3] -= 0.05
+        
+        # base orient
         elif key == "r":
-            self.value[4] += self.STEP_SIZE
+            self._value[4] += 0.1
         elif key == "f":
-            self.value[4] -= self.STEP_SIZE
+            self._value[4] -= 0.1
         elif key == "t":
-            self.value[5] += self.STEP_SIZE
+            self._value[5] += 0.1
         elif key == "g":
-            self.value[5] -= self.STEP_SIZE
+            self._value[5] -= 0.1
 
 
 class UnifiedControlVectorInputState(InputState):

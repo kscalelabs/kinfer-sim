@@ -24,7 +24,6 @@ from kscale.web.utils import get_robots_dir, should_refresh_file
 from kinfer_sim.provider import (
     CombinedInputState,
     ControlVectorInputState,
-    ExpandedControlVectorInputState,
     GenericOHEInputState,
     InputState,
     JoystickInputState,
@@ -321,6 +320,7 @@ async def get_model_metadata(api: K, model_name: str, cache: bool = True) -> Rob
 
 
 async def serve(config: ServerConfig) -> None:
+
     if config.local_model_dir:
         model_dir = Path(config.local_model_dir).expanduser().resolve()
         model_metadata = load_local_model_metadata(model_dir)
@@ -349,10 +349,7 @@ async def serve(config: ServerConfig) -> None:
             key_state.value = [1, 0, 0, 0]
 
     elif config.command_type == "control_vector":
-        key_state = ControlVectorInputState()
-        default = None
-    elif config.command_type == "expanded_control_vector":
-        key_state = ExpandedControlVectorInputState()
+        key_state = ControlVectorInputState(model_num_commands=metadata.num_commands)
         default = None
     elif config.command_type == "unified":
         # 16-dim vector expected by the walking model exported in ksim/examples/kbot
@@ -377,6 +374,14 @@ async def serve(config: ServerConfig) -> None:
         keyboard_controller = KeyboardController(key_handler, default=default)
 
         await keyboard_controller.start()
+
+    async with K() as api:
+        model_dir, model_metadata = await asyncio.gather(
+            api.download_and_extract_urdf(config.mujoco_model_name, cache=(not config.no_cache)),
+            get_model_metadata(api, config.mujoco_model_name),
+        )
+
+    model_path = find_mjcf(model_dir)
 
     server = SimulationServer(
         model_path=model_path,
