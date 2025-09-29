@@ -145,13 +145,14 @@ K-Infer is K-Scale Labs' model export and inference tool. It converts trained re
 3. Validate the policy using `kinfer-sim` (this tool)
 4. Deploy to physical robot using firmware
 
-## Documentation
+## Documentation and Support
 
 For more information about the K-Scale ecosystem:
 - **Main Documentation**: [https://docs.kscale.dev](https://docs.kscale.dev)
 - **Simulation Guide**: [https://docs.kscale.dev/robots/k-bot/simulation](https://docs.kscale.dev/robots/k-bot/simulation)
 - **K-Scale Labs**: [https://kscale.dev](https://kscale.dev)
-- **Discord Community**: Join our [Discord](https://discord.gg/wZmtKrRYwF) for support
+- **Discord**: Join our [Discord](https://discord.gg/wZmtKrRYwF) community for real-time help
+- **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/kscalelabs/kinfer-sim/issues)
 
 ## Contributing
 
@@ -165,23 +166,9 @@ To contribute:
 
 Check out our [GitHub organization](https://github.com/kscalelabs) for more projects to contribute to.
 
-## Benchmarks and Challenges
-
-Want to test your skills? Check out the [K-Scale Benchmarks](https://kscale.dev/benchmarks) where you can:
-- Submit your trained policies to the leaderboard
-- Compete in weekly challenges
-- See top policies deployed on real robots in livestreams
-- Win prizes including K-Bot hardware access!
-
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Support
-
-- **Issues**: Report bugs or request features on [GitHub Issues](https://github.com/kscalelabs/kinfer-sim/issues)
-- **Discord**: Join our [Discord](https://discord.gg/wZmtKrRYwF) community for real-time help
-- **Documentation**: Visit [docs.kscale.dev](https://docs.kscale.dev)
 
 ## Citation
 
