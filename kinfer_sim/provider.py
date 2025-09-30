@@ -12,44 +12,6 @@ from kinfer_sim.simulator import MujocoSimulator
 logger = logging.getLogger(__name__)
 
 
-def quat_to_euler(quat: np.ndarray) -> np.ndarray:
-    """Converts a quaternion to Euler angles.
-
-    Args:
-        quat: The quaternion to convert, shape (*, 4).
-
-    Returns:
-        The Euler angles, shape (*, 3).
-    """
-    eps: float = 1e-6  # small epsilon to avoid division by zero and NaNs
-
-    # Ensure numpy array and normalize the quaternion to unit length
-    quat = np.asarray(quat, dtype=np.float64)
-    quat = quat / (np.linalg.norm(quat, axis=-1, keepdims=True) + eps)
-
-    # Split into components (expects quaternion in (w, x, y, z) order)
-    w, x, y, z = np.split(quat, 4, axis=-1)
-
-    # Roll (x-axis rotation)
-    sinr_cosp = 2.0 * (w * x + y * z)
-    cosr_cosp = 1.0 - 2.0 * (x * x + y * y)
-    roll = np.arctan2(sinr_cosp, cosr_cosp)
-
-    # Pitch (y-axis rotation)
-    sinp = 2.0 * (w * y - z * x)
-    sinp = np.clip(sinp, -1.0 + eps, 1.0 - eps)  # numerical safety
-    pitch = np.arcsin(sinp)
-
-    # Yaw (z-axis rotation)
-    siny_cosp = 2.0 * (w * z + x * y)
-    cosy_cosp = 1.0 - 2.0 * (y * y + z * z)
-    yaw = np.arctan2(siny_cosp, cosy_cosp)
-
-    # Concatenate along the last dimension to maintain input shape semantics
-    euler = np.concatenate([roll, pitch, yaw], axis=-1)
-    return euler.astype(np.float32)
-
-
 def rotate_vector_by_quat(vector: np.ndarray, quat: np.ndarray, inverse: bool = False, eps: float = 1e-6) -> np.ndarray:
     """Rotates a vector by a quaternion.
 
@@ -440,7 +402,6 @@ class ModelProvider(ModelProviderABC):
     def get_command(self) -> np.ndarray:
         command_array = np.array(self.keyboard_state.value, dtype=np.float32)
         self.arrays["command"] = command_array
-        # logger.info(f"Command: {command_array}")
         return command_array
 
     def take_action(self, action: np.ndarray, metadata: PyModelMetadata) -> None:
