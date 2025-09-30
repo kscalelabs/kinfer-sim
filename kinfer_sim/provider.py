@@ -111,9 +111,9 @@ class ModelProvider(ModelProviderABC):
         inputs = {}
         for input_type in input_types:
             if input_type == "joint_angles":
-                inputs[input_type] = self.get_joint_angles(metadata.joint_names)
+                inputs[input_type] = self.get_joint_angles(metadata.joint_names)  # type: ignore[attr-defined]
             elif input_type == "joint_angular_velocities":
-                inputs[input_type] = self.get_joint_angular_velocities(metadata.joint_names)
+                inputs[input_type] = self.get_joint_angular_velocities(metadata.joint_names)  # type: ignore[attr-defined]
             elif input_type == "projected_gravity":
                 inputs[input_type] = self.get_projected_gravity()
             elif input_type == "accelerometer":
@@ -121,7 +121,7 @@ class ModelProvider(ModelProviderABC):
             elif input_type == "gyroscope":
                 inputs[input_type] = self.get_gyroscope()
             elif input_type == "command":
-                inputs[input_type] = self.get_command(metadata.num_commands)
+                inputs[input_type] = self.get_command(metadata.num_commands)  # type: ignore[attr-defined]
             elif input_type == "time":
                 inputs[input_type] = self.get_time()
             else:
@@ -190,7 +190,7 @@ class ModelProvider(ModelProviderABC):
         return command_array
 
     def take_action(self, action: np.ndarray, metadata: PyModelMetadata) -> None:
-        joint_names = metadata.joint_names
+        joint_names = metadata.joint_names  # type: ignore[attr-defined]
         assert action.shape == (len(joint_names),)
         self.arrays["action"] = action
         self.simulator.command_actuators({name: {"position": action[i]} for i, name in enumerate(joint_names)})
