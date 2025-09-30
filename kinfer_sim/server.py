@@ -320,7 +320,6 @@ async def get_model_metadata(api: K, model_name: str, cache: bool = True) -> Rob
 
 
 async def serve(config: ServerConfig) -> None:
-
     if config.local_model_dir:
         model_dir = Path(config.local_model_dir).expanduser().resolve()
         model_metadata = load_local_model_metadata(model_dir)

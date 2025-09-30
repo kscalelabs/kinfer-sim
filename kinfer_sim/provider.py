@@ -166,7 +166,7 @@ class SimpleJoystickInputState(InputState):
 
 class ControlVectorInputState(InputState):
     """State to hold and modify control vector commands based on keyboard input.
-    
+
     Contains 16 commands, but only the first `model_num_commands` are used:
     - [0] x linear velocity [m/s]
     - [1] y linear velocity [m/s]
@@ -196,7 +196,7 @@ class ControlVectorInputState(InputState):
     @property
     def value(self) -> list[float]:
         """Get the control vector values up to the model's expected command length."""
-        return self._value[:self.model_num_commands]
+        return self._value[: self.model_num_commands]
 
     @value.setter
     def value(self, new_value: list[float]) -> None:
@@ -231,7 +231,7 @@ class ControlVectorInputState(InputState):
             self._value[3] += 0.05
         elif key == "-":
             self._value[3] -= 0.05
-        
+
         # base orient
         elif key == "r":
             self._value[4] += 0.1
