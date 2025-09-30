@@ -1,12 +1,12 @@
 """Defines a K-Infer model provider for the Mujoco simulator."""
 
 import logging
-from abc import ABC, abstractmethod
 from typing import Sequence, cast
 
 import numpy as np
 from kinfer.rust_bindings import ModelProviderABC, PyModelMetadata
 
+from kinfer_sim.keyboard import Keyboard
 from kinfer_sim.simulator import MujocoSimulator
 
 logger = logging.getLogger(__name__)
@@ -73,222 +73,7 @@ def rotate_vector_by_quat(vector: np.ndarray, quat: np.ndarray, inverse: bool = 
     return np.concatenate([xx, yy, zz], axis=-1)
 
 
-class InputState(ABC):
-    """Abstract base class for input state management."""
 
-    value: list[float]
-
-    @abstractmethod
-    async def update(self, key: str) -> None:
-        """Update the input state based on a key press."""
-        pass
-
-
-class JoystickInputState(InputState):
-    """State to hold and modify commands based on joystick input."""
-
-    value: list[float]
-
-    def __init__(self) -> None:
-        self.value = [1, 0, 0, 0, 0, 0, 0]
-
-    async def update(self, key: str) -> None:
-        if key == "w":
-            self.value = [0, 1, 0, 0, 0, 0, 0]
-        elif key == "s":
-            self.value = [0, 0, 1, 0, 0, 0, 0]
-        elif key == "a":
-            self.value = [0, 0, 0, 0, 0, 1, 0]
-        elif key == "d":
-            self.value = [0, 0, 0, 0, 0, 0, 1]
-        elif key == "q":
-            self.value = [0, 0, 0, 1, 0, 0, 0]
-        elif key == "e":
-            self.value = [0, 0, 0, 0, 1, 0, 0]
-
-
-class SimpleJoystickInputState(InputState):
-    """State to hold and modify commands based on simple joystick input."""
-
-    value: list[float]
-
-    def __init__(self) -> None:
-        self.value = [1, 0, 0, 0]
-
-    async def update(self, key: str) -> None:
-        if key == "w":
-            self.value = [0, 1, 0, 0]
-        elif key == "s":
-            self.value = [0, 0, 1, 0]
-        elif key == "a":
-            self.value = [0, 0, 0, 1]
-        elif key == "d":
-            self.value = [1, 0, 0, 0]
-
-
-class ControlVectorInputState(InputState):
-    """State to hold and modify control vector commands based on keyboard input.
-
-    Contains 16 commands, but only the first `model_num_commands` are used:
-    - [0] x linear velocity [m/s]
-    - [1] y linear velocity [m/s]
-    - [2] z angular velocity [rad/s]
-    - [3] base height offset [m]
-    - [4] base roll [rad]
-    - [5] base pitch [rad]
-    - [6] right shoulder pitch [rad]
-    - [7] right shoulder roll [rad]
-    - [8] right elbow pitch [rad]
-    - [9] right elbow roll [rad]
-    - [10] right wrist pitch [rad]
-    - [11] left shoulder pitch [rad]
-    - [12] left shoulder roll [rad]
-    - [13] left elbow pitch [rad]
-    - [14] left elbow roll [rad]
-    - [15] left wrist pitch [rad]
-    """
-
-    model_num_commands: int
-    _value: list[float]
-
-    def __init__(self, model_num_commands: int) -> None:
-        self.model_num_commands = model_num_commands
-        self._value = [0.0] * 16
-
-    @property
-    def value(self) -> list[float]:
-        """Get the control vector values up to the model's expected command length."""
-        return self._value[: self.model_num_commands]
-
-    @value.setter
-    def value(self, new_value: list[float]) -> None:
-        """Set the control vector values. Auto pads with zeros the expected command length."""
-        if len(new_value) > len(self._value):
-            raise ValueError(f"New value length {len(new_value)} exceeds maximum length {len(self._value)}")
-        self._value = new_value + [0.0] * (len(self._value) - len(new_value))
-
-    async def update(self, key: str) -> None:
-        # reset
-        if key == "0":
-            self._value = [0.0 for _ in self._value]
-
-        # lin vel
-        elif key == "w":
-            self._value[0] += 0.1
-        elif key == "s":
-            self._value[0] -= 0.1
-        elif key == "a":
-            self._value[1] += 0.1
-        elif key == "d":
-            self._value[1] -= 0.1
-
-        # ang vel
-        elif key == "q":
-            self._value[2] += 0.1
-        elif key == "e":
-            self._value[2] -= 0.1
-
-        # base height
-        elif key == "=":
-            self._value[3] += 0.05
-        elif key == "-":
-            self._value[3] -= 0.05
-
-        # base orient
-        elif key == "r":
-            self._value[4] += 0.1
-        elif key == "f":
-            self._value[4] -= 0.1
-        elif key == "t":
-            self._value[5] += 0.1
-        elif key == "g":
-            self._value[5] -= 0.1
-
-
-class UnifiedControlVectorInputState(InputState):
-    """State to hold and modify control vector commands based on keyboard input.
-
-    Contains 16 commands, but only the first `model_num_commands` are used:
-    - [0] x linear velocity [m/s]
-    - [1] y linear velocity [m/s]
-    - [2] z angular velocity [rad/s]
-    - [3] base height offset [m]
-    - [4] base roll [rad]
-    - [5] base pitch [rad]
-    - [6] right shoulder pitch [rad]
-    - [7] right shoulder roll [rad]
-    - [8] right elbow pitch [rad]
-    - [9] right elbow roll [rad]
-    - [10] right wrist pitch [rad]
-    - [11] left shoulder pitch [rad]
-    - [12] left shoulder roll [rad]
-    - [13] left elbow pitch [rad]
-    - [14] left elbow roll [rad]
-    - [15] left wrist pitch [rad]
-    """
-
-    value: list[float]
-    STEP_SIZE: float = 0.1
-
-    def __init__(self) -> None:
-        # 2 (linvel, yaw) + 1 (angvel) + 10 (arm positions)
-        self.value = [0.0] * 16
-
-    async def update(self, key: str) -> None:
-        # Forward/back adjust linear velocity
-        if key == "w":
-            self.value[0] += self.STEP_SIZE
-        elif key == "s":
-            self.value[0] -= self.STEP_SIZE
-        # Yaw heading left/right
-        elif key == "a":
-            self.value[1] -= self.STEP_SIZE
-        elif key == "d":
-            self.value[1] += self.STEP_SIZE
-        # Angular velocity yaw (rate)
-        elif key == "q":
-            self.value[2] -= self.STEP_SIZE
-        elif key == "e":
-            self.value[2] += self.STEP_SIZE
-
-
-class GenericOHEInputState(InputState):
-    """State to hold and modify control vector commands based on keyboard input."""
-
-    value: list[float]
-
-    def __init__(self, num_actions: int) -> None:
-        self.value = [0.0] * num_actions
-
-    async def update(self, key: str) -> None:
-        if key.isdigit() and int(key) < len(self.value):
-            self.value = [0.0] * len(self.value)
-            self.value[int(key)] = 1.0
-
-
-class CombinedInputState(InputState):
-    """Multiple input states combined into a single state."""
-
-    input_states: list[InputState]
-
-    def __init__(self, input_states: list[InputState]) -> None:
-        self.input_states = input_states
-
-    async def update(self, key: str) -> None:
-        for input_state in self.input_states:
-            await input_state.update(key)
-
-    @property
-    def value(self) -> list[float]:
-        return [item for sublist in [input_state.value for input_state in self.input_states] for item in sublist]
-
-    @value.setter
-    def value(self, new_value: list[float]) -> None:
-        start_idx = 0
-        for input_state in self.input_states:
-            end_idx = start_idx + len(input_state.value)
-            input_state.value = new_value[start_idx:end_idx]
-            start_idx = end_idx
 
 
 class ModelProvider(ModelProviderABC):
@@ -297,12 +82,12 @@ class ModelProvider(ModelProviderABC):
     acc_name: str
     gyro_name: str
     arrays: dict[str, np.ndarray]
-    keyboard_state: InputState
+    command_provider: Keyboard | None
 
     def __new__(
         cls,
         simulator: MujocoSimulator,
-        keyboard_state: InputState,
+        command_provider: Keyboard | None,
         quat_name: str = "imu_site_quat",
         acc_name: str = "imu_acc",
         gyro_name: str = "imu_gyro",
@@ -313,7 +98,7 @@ class ModelProvider(ModelProviderABC):
         self.acc_name = acc_name
         self.gyro_name = gyro_name
         self.arrays = {}
-        self.keyboard_state = keyboard_state
+        self.command_provider = command_provider
         return self
 
     def get_inputs(self, input_types: Sequence[str], metadata: PyModelMetadata) -> dict[str, np.ndarray]:
@@ -339,7 +124,7 @@ class ModelProvider(ModelProviderABC):
             elif input_type == "gyroscope":
                 inputs[input_type] = self.get_gyroscope()
             elif input_type == "command":
-                inputs[input_type] = self.get_command()
+                inputs[input_type] = self.get_command(metadata.num_commands)  # type: ignore[attr-defined]
             elif input_type == "time":
                 inputs[input_type] = self.get_time()
             else:
@@ -399,8 +184,11 @@ class ModelProvider(ModelProviderABC):
         self.arrays["time"] = time_array
         return time_array
 
-    def get_command(self) -> np.ndarray:
-        command_array = np.array(self.keyboard_state.value, dtype=np.float32)
+    def get_command(self, num_commands: int) -> np.ndarray:
+        if not self.command_provider:
+            command_array = np.zeros(num_commands, dtype=np.float32)
+        else:
+            command_array = np.array(self.command_provider.get_cmd(), dtype=np.float32)
         self.arrays["command"] = command_array
         return command_array
 

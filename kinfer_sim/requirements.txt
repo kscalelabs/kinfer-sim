@@ -10,4 +10,3 @@ omegaconf
 scipy
 mediapy
 typed-argparse
-askin

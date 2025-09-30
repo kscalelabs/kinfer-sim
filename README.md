@@ -81,9 +81,6 @@ kinfer-sim <kinfer-path> <mujoco-model-name> [OPTIONS]
 
 **Model Settings:**
 - `--use-keyboard`: Use keyboard to control the robot
-- `--command-type <type>`: Type of command interface (default: `expanded_control_vector`)
-  - Options: `joystick`, `simple_joystick`, `control_vector`, `expanded_control_vector`, `unified`
-- `--keyframes <int>`: Number of keyframe animations to append to command
 
 **Randomization Settings (for domain randomization testing):**
 - `--command-delay-min <float>`: Minimum command delay in seconds
