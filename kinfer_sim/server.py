@@ -154,7 +154,7 @@ class SimulationServer:
 
                 expected = metadata.num_commands  # type: ignore[attr-defined]
                 if isinstance(self._command_provider, Keyboard):
-                    actual = len(command_provider.get_cmd())
+                    actual = len(command_provider.get_cmd())  # type: ignore[union-attr]
                     if actual != expected:
                         raise ValueError(
                             f"Command dimension mismatch: {type(command_provider).__name__} provides command"

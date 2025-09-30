@@ -1,3 +1,5 @@
+"""Keyboard command provider."""
+
 import atexit
 import select
 import sys
@@ -12,7 +14,7 @@ class Keyboard:
 
     Contains 16 commands that can be modified via keyboard input:
     - [0] x linear velocity [m/s]
-    - [1] y linear velocity [m/s] 
+    - [1] y linear velocity [m/s]
     - [2] z angular velocity [rad/s]
     - [3] base height offset [m]
     - [4] base roll [rad]
@@ -51,7 +53,7 @@ class Keyboard:
         if self._thread and self._thread.is_alive():
             self._thread.join(timeout=1.0)
 
-    def __del__(self):
+    def __del__(self) -> None:
         """Cleanup on destruction."""
         self._stop()
 
@@ -109,4 +111,3 @@ class Keyboard:
 
             except (IOError, EOFError):
                 continue
-
