@@ -8,12 +8,10 @@ import tarfile
 import time
 import traceback
 from pathlib import Path
-from typing import Awaitable, Callable, Literal
 
 import colorlogging
 import numpy as np
 import typed_argparse as tap
-from askin import KeyboardController
 from kinfer.rust_bindings import PyModelRunner, metadata_from_json
 from kmv.app.viewer import QtViewer
 from kmv.utils.logging import VideoWriter, save_logs
@@ -21,16 +19,8 @@ from kscale.web.clients.client import WWWClient as K
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
-from kinfer_sim.provider import (
-    CombinedInputState,
-    ControlVectorInputState,
-    GenericOHEInputState,
-    InputState,
-    JoystickInputState,
-    ModelProvider,
-    SimpleJoystickInputState,
-    UnifiedControlVectorInputState,
-)
+from kinfer_sim.keyboard import Keyboard
+from kinfer_sim.provider import ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
 
 logger = logging.getLogger(__name__)
@@ -71,17 +61,8 @@ class ServerConfig(tap.TypedArgs):
     save_logs: bool = tap.arg(default=False, help="Save logs")
     free_camera: bool = tap.arg(default=False, help="Free camera")
 
-    # Model settings
+    # control settings
     use_keyboard: bool = tap.arg(default=False, help="Use keyboard to control the robot")
-    command_type: Literal[
-        "joystick",
-        "simple_joystick",
-        "control_vector",
-        "expanded_control_vector",
-        "unified",
-    ] = tap.arg(default="control_vector", help="Type of command to use")
-
-    keyframes: int | None = tap.arg(default=None, help="Number of keyframe animations to append to command")
 
     # Randomization settings
     command_delay_min: float | None = tap.arg(default=None, help="Minimum command delay")
@@ -102,7 +83,7 @@ class SimulationServer:
         model_path: str | Path,
         model_metadata: RobotURDFMetadataOutput,
         config: ServerConfig,
-        keyboard_state: InputState,
+        command_provider: Keyboard | None,
     ) -> None:
         initial_quat_str = config.initial_quat
         if initial_quat_str is not None:
@@ -147,7 +128,7 @@ class SimulationServer:
         self._save_path = Path(config.save_path).expanduser().resolve()
         self._save_video = config.save_video
         self._save_logs = config.save_logs
-        self._keyboard_state = keyboard_state
+        self._command_provider = command_provider
         self._joint_names: list[str] = load_joint_names(self._kinfer_path)
         self._plots_w_joint_names: frozenset[str] = frozenset({"joint_angles", "joint_velocities", "action"})
 
@@ -172,12 +153,13 @@ class SimulationServer:
                     return
 
                 expected = metadata.num_commands  # type: ignore[attr-defined]
-                actual = len(keyboard_state.value)
-                if actual != expected:
-                    raise ValueError(
-                        f"Command dimension mismatch: {type(keyboard_state).__name__} provides command"
-                        f"with dim {actual} but model expects command with dim {expected}"
-                    )
+                if isinstance(self._command_provider, Keyboard):
+                    actual = len(command_provider.get_cmd())  # type: ignore[union-attr]
+                    if actual != expected:
+                        raise ValueError(
+                            f"Command dimension mismatch: {type(command_provider).__name__} provides command"
+                            f"with dim {actual} but model expects command with dim {expected}"
+                        )
 
         except (tarfile.TarError, FileNotFoundError):
             logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
@@ -215,13 +197,13 @@ class SimulationServer:
             quat_name=self._quat_name,
             acc_name=self._acc_name,
             gyro_name=self._gyro_name,
-            keyboard_state=self._keyboard_state,
+            command_provider=self._command_provider,
         )
-        model_runner = PyModelRunner(str(self._kinfer_path), model_provider)
+        model_runner = PyModelRunner(str(self._kinfer_path), model_provider)  # type: ignore[call-arg]
 
         loop = asyncio.get_running_loop()
 
-        carry = model_runner.init()
+        carry = model_runner.init()  # type: ignore[attr-defined]
 
         logs: list[dict[str, np.ndarray]] | None = None
         if self._save_logs:
@@ -242,8 +224,8 @@ class SimulationServer:
                         break
 
                 # Offload blocking calls to the executor
-                output, carry = await loop.run_in_executor(None, model_runner.step, carry)
-                await loop.run_in_executor(None, model_runner.take_action, output)
+                output, carry = await loop.run_in_executor(None, model_runner.step, carry)  # type: ignore[attr-defined]
+                await loop.run_in_executor(None, model_runner.take_action, output)  # type: ignore[attr-defined]
 
                 # Plot policy inputs and outputs to the viewer
                 if isinstance(self.simulator._viewer, QtViewer):
@@ -320,7 +302,6 @@ async def get_model_metadata(api: K, model_name: str, cache: bool = True) -> Rob
 
 
 async def serve(config: ServerConfig) -> None:
-
     if config.local_model_dir:
         model_dir = Path(config.local_model_dir).expanduser().resolve()
         model_metadata = load_local_model_metadata(model_dir)
@@ -333,61 +314,11 @@ async def serve(config: ServerConfig) -> None:
 
     model_path = find_mjcf(model_dir)
 
-    key_state: InputState
-    default: Callable[[], Awaitable[None]] | None = None
-
-    if config.command_type == "joystick":
-        key_state = JoystickInputState()
-
-        async def default() -> None:
-            key_state.value = [1, 0, 0, 0, 0, 0, 0]
-
-    elif config.command_type == "simple_joystick":
-        key_state = SimpleJoystickInputState()
-
-        async def default() -> None:
-            key_state.value = [1, 0, 0, 0]
-
-    elif config.command_type == "control_vector":
-        key_state = ControlVectorInputState(model_num_commands=metadata.num_commands)
-        default = None
-    elif config.command_type == "unified":
-        # 16-dim vector expected by the walking model exported in ksim/examples/kbot
-        key_state = UnifiedControlVectorInputState()
-        default = None
-    else:
-        raise ValueError(f"Invalid command type: {config.command_type}")
-
-    if config.keyframes is not None:
-        key_state = CombinedInputState(
-            [
-                key_state,
-                GenericOHEInputState(config.keyframes),
-            ]
-        )
-
-    if config.use_keyboard:
-
-        async def key_handler(key: str) -> None:
-            await key_state.update(key)
-
-        keyboard_controller = KeyboardController(key_handler, default=default)
-
-        await keyboard_controller.start()
-
-    async with K() as api:
-        model_dir, model_metadata = await asyncio.gather(
-            api.download_and_extract_urdf(config.mujoco_model_name, cache=(not config.no_cache)),
-            get_model_metadata(api, config.mujoco_model_name),
-        )
-
-    model_path = find_mjcf(model_dir)
-
     server = SimulationServer(
         model_path=model_path,
         model_metadata=model_metadata,
         config=config,
-        keyboard_state=key_state,
+        command_provider=Keyboard() if config.use_keyboard else None,
     )
 
     await server.start()
