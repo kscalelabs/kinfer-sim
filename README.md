@@ -80,7 +80,7 @@ kinfer-sim <kinfer-path> <mujoco-model-name> [OPTIONS]
 - `--free-camera`: Enable free camera control
 
 **Model Settings:**
-- `--use-keyboard`: Use keyboard to control the robot
+- `--use-keyboard`: Use keyboard to control the robot with a 16 dim command defined in `kinfer_sim/keyboard.py`
 
 **Randomization Settings (for domain randomization testing):**
 - `--command-delay-min <float>`: Minimum command delay in seconds
