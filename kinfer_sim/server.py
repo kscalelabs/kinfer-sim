@@ -199,11 +199,11 @@ class SimulationServer:
             gyro_name=self._gyro_name,
             command_provider=self._command_provider,
         )
-        model_runner = PyModelRunner(str(self._kinfer_path), model_provider) # type: ignore[call-arg]
+        model_runner = PyModelRunner(str(self._kinfer_path), model_provider)  # type: ignore[call-arg]
 
         loop = asyncio.get_running_loop()
 
-        carry = model_runner.init() # type: ignore[attr-defined]
+        carry = model_runner.init()  # type: ignore[attr-defined]
 
         logs: list[dict[str, np.ndarray]] | None = None
         if self._save_logs:
@@ -224,8 +224,8 @@ class SimulationServer:
                         break
 
                 # Offload blocking calls to the executor
-                output, carry = await loop.run_in_executor(None, model_runner.step, carry) # type: ignore[attr-defined]
-                await loop.run_in_executor(None, model_runner.take_action, output) # type: ignore[attr-defined]
+                output, carry = await loop.run_in_executor(None, model_runner.step, carry)  # type: ignore[attr-defined]
+                await loop.run_in_executor(None, model_runner.take_action, output)  # type: ignore[attr-defined]
 
                 # Plot policy inputs and outputs to the viewer
                 if isinstance(self.simulator._viewer, QtViewer):
