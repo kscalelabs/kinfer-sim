@@ -336,7 +336,6 @@ class ModelProvider(ModelProviderABC):
     gyro_name: str
     arrays: dict[str, np.ndarray]
     keyboard_state: InputState
-    initial_heading: float
 
     def __new__(
         cls,
@@ -353,7 +352,6 @@ class ModelProvider(ModelProviderABC):
         self.gyro_name = gyro_name
         self.arrays = {}
         self.keyboard_state = keyboard_state
-        self.initial_heading = quat_to_euler(self.simulator._data.sensor(self.quat_name).data)[2]
         return self
 
     def get_inputs(self, input_types: Sequence[str], metadata: PyModelMetadata) -> dict[str, np.ndarray]:
@@ -372,8 +370,6 @@ class ModelProvider(ModelProviderABC):
                 inputs[input_type] = self.get_joint_angles(metadata.joint_names)  # type: ignore[attr-defined]
             elif input_type == "joint_angular_velocities":
                 inputs[input_type] = self.get_joint_angular_velocities(metadata.joint_names)  # type: ignore[attr-defined]
-            elif input_type == "initial_heading":
-                inputs[input_type] = np.array([self.initial_heading])
             elif input_type == "projected_gravity":
                 inputs[input_type] = self.get_projected_gravity()
             elif input_type == "accelerometer":
