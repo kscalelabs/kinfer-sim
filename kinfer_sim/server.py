@@ -188,7 +188,7 @@ class SimulationServer:
                 if isinstance(self.simulator._viewer, QtViewer):
                     if not self.simulator._viewer.is_open:
                         break
-                        
+
                     for n, a in model_provider.arrays.items():
                         self.simulator._viewer.push_plot_metrics(scalars=self._to_scalars(n, a), group=n)
 
