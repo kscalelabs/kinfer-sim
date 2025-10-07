@@ -135,21 +135,7 @@ class PositionActuator(Actuator):
         qvel: float,
         dt: float,
     ) -> float:
-        # Clamp target position to joint limits
         target_position = cmd.get("position", 0.0)
-        # Clamped position is only used for warning if action is out of joint limits
-        clamped_position = self.get_clamped_position_target(target_position)
-
-        # Log warning if position was clamped
-        if target_position != clamped_position:
-            logger.warning(
-                "%s (id %d) action %s was out of joint limits: [%.3f, %.3f]",
-                self.joint_name,
-                self.joint_id,
-                target_position,
-                self.joint_min,
-                self.joint_max,
-            )
 
         torque = (
             self.kp * (target_position - qpos) + self.kd * (cmd.get("velocity", 0.0) - qvel) + cmd.get("torque", 0.0)
