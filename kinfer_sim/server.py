@@ -139,31 +139,6 @@ class SimulationServer:
             fps = round(self.simulator._control_frequency)
             self._video_writer = VideoWriter(self._save_path / "video.mp4", fps=fps)
 
-        # Check command dimension matches model expectations
-        try:
-            with tarfile.open(self._kinfer_path, "r:gz") as tar:
-                metadata_file = tar.extractfile("metadata.json")
-                if metadata_file is None:
-                    logger.warning("Could not validate command dimension: metadata.json not found in kinfer file")
-                    return
-
-                metadata = metadata_from_json(metadata_file.read().decode("utf-8"))
-                if metadata.num_commands is None:  # type: ignore[attr-defined]
-                    logger.warning("Could not validate command dimension: num_commands not specified in model metadata")
-                    return
-
-                expected = metadata.num_commands  # type: ignore[attr-defined]
-                if isinstance(self._command_provider, Keyboard):
-                    actual = len(command_provider.get_cmd())  # type: ignore[union-attr]
-                    if actual != expected:
-                        raise ValueError(
-                            f"Command dimension mismatch: {type(command_provider).__name__} provides command"
-                            f"with dim {actual} but model expects command with dim {expected}"
-                        )
-
-        except (tarfile.TarError, FileNotFoundError):
-            logger.warning("Could not validate command dimension: unable to read kinfer file: %s", self._kinfer_path)
-
     def _to_scalars(self, name: str, arr: np.ndarray) -> dict[str, float]:
         """Convert a 1-D array into `{legend_name: value}` pairs.
 
@@ -184,12 +159,7 @@ class SimulationServer:
 
     async def _simulation_loop(self) -> None:
         """Run the simulation loop asynchronously."""
-        start_time = time.perf_counter()
-        last_fps_time = start_time
-        wall_time_for_next_step = start_time
         ctrl_dt = 1.0 / self.simulator._control_frequency
-        num_steps = 0
-        fps_update_interval = 1.0  # Update FPS every second
 
         # Initialize the model runner on the simulator.
         model_provider = ModelProvider(
@@ -199,62 +169,36 @@ class SimulationServer:
             gyro_name=self._gyro_name,
             command_provider=self._command_provider,
         )
-        model_runner = PyModelRunner(str(self._kinfer_path), model_provider)  # type: ignore[call-arg]
-
-        loop = asyncio.get_running_loop()
-
-        carry = model_runner.init()  # type: ignore[attr-defined]
-
-        logs: list[dict[str, np.ndarray]] | None = None
-        if self._save_logs:
-            logs = []
+        model_runner = PyModelRunner(str(self._kinfer_path), model_provider, pre_fetch_time_ms=None)
+        logs = []
 
         try:
             while not self._stop_event.is_set():
-                model_provider.arrays.clear()
+                loop_start = time.perf_counter()
+
+                # forward pass through policy
+                model_runner.step_and_take_action()
 
                 # Runs the simulation for one step.
                 async with self._step_lock:
                     for _ in range(self.simulator._sim_decimation):
                         await self.simulator.step()
 
-                # Shut down if the viewer is closed.
+                # Handle Qt viewer specific operations
                 if isinstance(self.simulator._viewer, QtViewer):
                     if not self.simulator._viewer.is_open:
                         break
 
-                # Offload blocking calls to the executor
-                output, carry = await loop.run_in_executor(None, model_runner.step, carry)  # type: ignore[attr-defined]
-                await loop.run_in_executor(None, model_runner.take_action, output)  # type: ignore[attr-defined]
-
-                # Plot policy inputs and outputs to the viewer
-                if isinstance(self.simulator._viewer, QtViewer):
                     for n, a in model_provider.arrays.items():
                         self.simulator._viewer.push_plot_metrics(scalars=self._to_scalars(n, a), group=n)
 
-                num_steps += 1
-                if logs is not None:
-                    logs.append(model_provider.arrays.copy())
-
-                if self._video_writer is not None and num_steps % self._video_render_decimation == 0:
+                logs.append(model_provider.arrays.copy())
+                if self._video_writer is not None and self.simulator.sim_time % self._video_render_decimation < ctrl_dt:
                     self._video_writer.append(self.simulator.read_pixels())
 
-                # Match the simulation time to the wall clock time.
-                wall_time_for_next_step += ctrl_dt
-                await asyncio.sleep(max(0, wall_time_for_next_step - time.perf_counter()))
-
-                # Calculate and log FPS
-                current_time = time.perf_counter()
-                if current_time - last_fps_time >= fps_update_interval:
-                    physics_fps = num_steps / (current_time - last_fps_time)
-                    logger.info(
-                        "Physics FPS: %.2f, Simulation time: %.3f, Wall time: %.3f",
-                        physics_fps,
-                        self.simulator.sim_time,
-                        current_time,
-                    )
-                    num_steps = 0
-                    last_fps_time = current_time
+                # Wait until ctrl_dt has elapsed
+                logger.info("Loop took %.3f ms", (time.perf_counter() - loop_start) * 1000)
+                await asyncio.sleep(max(0.0, ctrl_dt - (time.perf_counter() - loop_start)))
 
         except Exception as e:
             logger.error("Simulation loop failed: %s", e)
@@ -269,7 +213,7 @@ class SimulationServer:
             if isinstance(self.simulator._viewer, QtViewer):
                 self.simulator._viewer.close()
 
-            if logs is not None:
+            if self._save_logs:
                 save_logs(logs, self._save_path / "logs")
 
     async def start(self) -> None:

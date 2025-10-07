@@ -121,7 +121,7 @@ class ModelProvider(ModelProviderABC):
             elif input_type == "gyroscope":
                 inputs[input_type] = self.get_gyroscope()
             elif input_type == "command":
-                inputs[input_type] = self.get_command(metadata.num_commands)  # type: ignore[attr-defined]
+                inputs[input_type] = self.get_command(metadata.command_names)  # type: ignore[attr-defined]
             elif input_type == "time":
                 inputs[input_type] = self.get_time()
             else:
@@ -181,9 +181,9 @@ class ModelProvider(ModelProviderABC):
         self.arrays["time"] = time_array
         return time_array
 
-    def get_command(self, num_commands: int) -> np.ndarray:
+    def get_command(self, command_names: Sequence[str]) -> np.ndarray:
         if not self.command_provider:
-            command_array = np.zeros(num_commands, dtype=np.float32)
+            command_array = np.zeros(len(command_names), dtype=np.float32)
         else:
             command_array = np.array(self.command_provider.get_cmd(), dtype=np.float32)
         self.arrays["command"] = command_array

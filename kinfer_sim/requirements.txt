@@ -1,7 +1,7 @@
 # requirements.txt
 
 kscale
-kinfer
+kinfer>=0.6.1
 mujoco
 mujoco-scenes
 kmv
