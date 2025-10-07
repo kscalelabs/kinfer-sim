@@ -169,7 +169,7 @@ class SimulationServer:
             gyro_name=self._gyro_name,
             command_provider=self._command_provider,
         )
-        model_runner = PyModelRunner(str(self._kinfer_path), model_provider, pre_fetch_time_ms=None)  # type: ignore[call-arg]
+        model_runner = PyModelRunner(str(self._kinfer_path), model_provider, pre_fetch_time_ms=None)
         logs = []
 
         try:
