@@ -1,8 +1,7 @@
 """Keyboard command provider."""
 
-from queue import Queue, Empty
-import sys
 import threading
+from queue import Empty, Queue
 from typing import List
 
 
@@ -62,7 +61,7 @@ class KeyboardController:
                 key = self.queue.get(timeout=0.1)
             except Empty:
                 continue
-        
+
             key = key.strip("'").lower()
 
             # base controls

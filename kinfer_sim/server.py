@@ -7,8 +7,8 @@ import logging
 import tarfile
 import time
 import traceback
-from queue import Empty
 from pathlib import Path
+from queue import Empty
 
 import colorlogging
 import numpy as np
@@ -20,8 +20,8 @@ from kscale.web.clients.client import WWWClient as K
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
-from kinfer_sim.keyboard_listener import KeyboardListener
 from kinfer_sim.keyboard_controller import KeyboardController
+from kinfer_sim.keyboard_listener import KeyboardListener
 from kinfer_sim.provider import ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
 
@@ -91,7 +91,7 @@ class SimulationServer:
         # Add control state
         self._paused = False
         self._control_queue = keyboard_listener.get_queue()
-        
+
         initial_quat_str = config.initial_quat
         if initial_quat_str is not None:
             initial_quat = tuple(float(x) for x in initial_quat_str.split(","))
