@@ -1,9 +1,6 @@
-import logging
 from queue import Queue
 
 from pynput import keyboard
-
-logger = logging.getLogger(__name__)
 
 class KeyboardListener:
     """Keyboard listener that writes all key presses to queues."""
