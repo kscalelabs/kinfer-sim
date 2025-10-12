@@ -106,8 +106,5 @@ class Keyboard:
                 elif ch == "g":
                     self.cmd[5] -= 0.1
 
-                # clamp
-                self.cmd = [max(-0.3, min(0.3, cmd)) for cmd in self.cmd]
-
             except (IOError, EOFError):
                 continue
