@@ -3,6 +3,7 @@
 from queue import Queue
 
 from pynput import keyboard
+from pynput.keyboard import Key, KeyCode
 
 
 class KeyboardListener:
@@ -15,7 +16,7 @@ class KeyboardListener:
         self.listener.daemon = True
         self.listener.start()
 
-    def _on_press(self, key: keyboard.Key) -> None:
+    def _on_press(self, key: Key | KeyCode | None) -> None:
         """Write all key presses to all queues."""
         for queue in self.queues:
             queue.put(str(key).lower())
