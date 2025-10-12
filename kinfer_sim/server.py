@@ -7,6 +7,7 @@ import logging
 import tarfile
 import time
 import traceback
+from queue import Empty
 from pathlib import Path
 
 import colorlogging
@@ -19,7 +20,8 @@ from kscale.web.clients.client import WWWClient as K
 from kscale.web.gen.api import RobotURDFMetadataOutput
 from kscale.web.utils import get_robots_dir, should_refresh_file
 
-from kinfer_sim.keyboard import Keyboard
+from kinfer_sim.keyboard_listener import KeyboardListener
+from kinfer_sim.keyboard_controller import KeyboardController
 from kinfer_sim.provider import ModelProvider
 from kinfer_sim.simulator import MujocoSimulator
 
@@ -83,8 +85,13 @@ class SimulationServer:
         model_path: str | Path,
         model_metadata: RobotURDFMetadataOutput,
         config: ServerConfig,
-        command_provider: Keyboard | None,
+        command_provider: KeyboardController | None,
+        keyboard_listener: KeyboardListener,
     ) -> None:
+        # Add control state
+        self._paused = False
+        self._control_queue = keyboard_listener.get_queue()
+        
         initial_quat_str = config.initial_quat
         if initial_quat_str is not None:
             initial_quat = tuple(float(x) for x in initial_quat_str.split(","))
@@ -176,13 +183,29 @@ class SimulationServer:
             while not self._stop_event.is_set():
                 loop_start = time.perf_counter()
 
-                # forward pass through policy
-                model_runner.step_and_take_action()
+                # Check for control keys
+                try:
+                    key = self._control_queue.get_nowait()
+                    if key == "key.space":
+                        self._paused = not self._paused
+                        logger.info("Simulation %s", "paused" if self._paused else "resumed")
+                    elif key == "key.backspace":
+                        logger.info("Resetting simulation...")
+                        await self.simulator.reset()
+                        if self._command_provider:
+                            self._command_provider.reset_cmd()
+                        logger.info("Simulation reset complete")
+                except Empty:
+                    pass
 
-                # Runs the simulation for one step.
-                async with self._step_lock:
-                    for _ in range(self.simulator._sim_decimation):
-                        await self.simulator.step()
+                if not self._paused:
+                    # forward pass through policy
+                    model_runner.step_and_take_action()
+
+                    # Runs the simulation for one step.
+                    async with self._step_lock:
+                        for _ in range(self.simulator._sim_decimation):
+                            await self.simulator.step()
 
                 # Handle Qt viewer specific operations
                 if isinstance(self.simulator._viewer, QtViewer):
@@ -197,7 +220,6 @@ class SimulationServer:
                     self._video_writer.append(self.simulator.read_pixels())
 
                 # Wait until ctrl_dt has elapsed
-                logger.info("Loop took %.3f ms", (time.perf_counter() - loop_start) * 1000)
                 await asyncio.sleep(max(0.0, ctrl_dt - (time.perf_counter() - loop_start)))
 
         except Exception as e:
@@ -258,11 +280,14 @@ async def serve(config: ServerConfig) -> None:
 
     model_path = find_mjcf(model_dir)
 
+    keyboard_listener = KeyboardListener()
+
     server = SimulationServer(
         model_path=model_path,
         model_metadata=model_metadata,
         config=config,
-        command_provider=Keyboard() if config.use_keyboard else None,
+        command_provider=KeyboardController(keyboard_listener.get_queue()) if config.use_keyboard else None,
+        keyboard_listener=keyboard_listener,
     )
 
     await server.start()
