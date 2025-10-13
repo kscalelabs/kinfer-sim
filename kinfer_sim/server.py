@@ -7,9 +7,9 @@ import logging
 import tarfile
 import time
 import traceback
+from datetime import datetime
 from pathlib import Path
 from queue import Empty
-from datetime import datetime
 
 import colorlogging
 import numpy as np
@@ -220,7 +220,7 @@ class SimulationServer:
                 # Compute torques for logging/plotting from simulator
                 torque = self.simulator.get_torques(self._joint_names)
                 model_provider.arrays["joint_torques"] = torque
-                # log 
+                # log
                 logs.append(model_provider.arrays.copy())
                 if self._video_writer is not None and self.simulator.sim_time % self._video_render_decimation < ctrl_dt:
                     self._video_writer.append(self.simulator.read_pixels())

@@ -495,6 +495,9 @@ class MujocoSimulator:
         torques: list[float] = []
         for joint_name in joint_names:
             joint_id = self._joint_name_to_id.get(joint_name)
+            if joint_id is None:
+                torques.append(0.0)
+                continue
             actuator_id = self._joint_id_to_actuator_id.get(joint_id)
             torques.append(float(self._data.ctrl[actuator_id]))
         return np.asarray(torques, dtype=np.float32)
