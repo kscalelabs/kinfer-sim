@@ -62,7 +62,7 @@ class KeyboardController:
     def _set_motion(self, motion_name: str) -> None:
         logger.info("Setting motion to %s", motion_name)
         self.reset_cmd()
-        self.active_motion = MOTIONS[motion_name](dt=0.02)
+        self.active_motion = MOTIONS[motion_name](0.02)
 
     def _read_input(self) -> None:
         """Threaded method that continuously reads keyboard input to update command vector."""
