@@ -486,6 +486,19 @@ class MujocoSimulator:
             qvel=self._data.qvel.copy(),
         )
 
+    def get_torques(self, joint_names: list[str]) -> np.ndarray:
+        """Return actuator torques ordered by provided `joint_names`.
+
+        Maps K-Scale joint names to MuJoCo actuator indices and returns the
+        current ctrl values. Missing mappings are returned as 0.0.
+        """
+        torques: list[float] = []
+        for joint_name in joint_names:
+            joint_id = self._joint_name_to_id.get(joint_name)
+            actuator_id = self._joint_id_to_actuator_id.get(joint_id)
+            torques.append(float(self._data.ctrl[actuator_id]))
+        return np.asarray(torques, dtype=np.float32)
+
     def set_suspend_mode(self, suspend: bool) -> None:
         """Enable or disable suspend mode at runtime."""
         if suspend and not self._suspended and self._freejoint:
