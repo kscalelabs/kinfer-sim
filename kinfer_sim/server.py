@@ -137,7 +137,7 @@ class SimulationServer:
         self._save_video = config.save_video
         self._save_logs = config.save_logs
         self._command_provider = command_provider
-        self._run_name = f"{Path(self._kinfer_path).stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        self._run_name = f"{Path(self._kinfer_path).stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_sim"
         self._joint_names: list[str] = load_joint_names(self._kinfer_path)
         self._plots_w_joint_names: frozenset[str] = frozenset({"joint_angles", "joint_velocities", "action", "torque"})
 
@@ -221,7 +221,11 @@ class SimulationServer:
                 torque = self.simulator.get_torques(self._joint_names)
                 model_provider.arrays["joint_torques"] = torque
                 # log
-                logs.append(model_provider.arrays.copy())
+                logs.append(
+                    {"step_id": self.simulator._step}
+                    | model_provider.arrays.copy()
+                    | {"joint_order": self._joint_names}
+                )
                 if self._video_writer is not None and self.simulator.sim_time % self._video_render_decimation < ctrl_dt:
                     self._video_writer.append(self.simulator.read_pixels())
 
