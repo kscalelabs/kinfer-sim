@@ -3,9 +3,9 @@
 import logging
 import threading
 from queue import Empty, Queue
-from typing import List, Sequence
+from typing import List, Optional, Sequence
 
-from kmotions.motions import MOTIONS
+from kmotions.motions import MOTIONS, Motion
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class KeyboardController:
     def __init__(self, keyboard_queue: Queue) -> None:
         self.queue = keyboard_queue
         self.cmd = [0.0] * 16
-        self.active_motion = None
+        self.active_motion: Optional[Motion] = None
 
         # Start keyboard reading thread
         self._running = True
