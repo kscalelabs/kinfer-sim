@@ -6,7 +6,7 @@ from typing import Sequence, cast
 import numpy as np
 from kinfer.rust_bindings import ModelProviderABC, PyModelMetadata
 
-from kinfer_sim.keyboard import Keyboard
+from kinfer_sim.keyboard_controller import KeyboardController
 from kinfer_sim.simulator import MujocoSimulator
 
 logger = logging.getLogger(__name__)
@@ -79,12 +79,12 @@ class ModelProvider(ModelProviderABC):
     acc_name: str
     gyro_name: str
     arrays: dict[str, np.ndarray]
-    command_provider: Keyboard | None
+    command_provider: KeyboardController | None
 
     def __new__(
         cls,
         simulator: MujocoSimulator,
-        command_provider: Keyboard | None,
+        command_provider: KeyboardController | None,
         quat_name: str = "imu_site_quat",
         acc_name: str = "imu_acc",
         gyro_name: str = "imu_gyro",
