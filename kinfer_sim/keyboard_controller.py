@@ -1,12 +1,11 @@
 """Keyboard command provider."""
 
+import logging
 import threading
 from queue import Empty, Queue
-from typing import List
-import logging
+from typing import List, Sequence
 
 from kmotions.motions import MOTIONS
-
 
 logger = logging.getLogger(__name__)
 
@@ -20,17 +19,17 @@ class KeyboardController:
     - [2] z angular velocity [rad/s]
     - [3] base height offset [m]
     - [4] base roll [rad]
-    - [5] base pitkey [rad]
-    - [6] right shoulder pitkey [rad]
+    - [5] base pitch [rad]
+    - [6] right shoulder pitch [rad]
     - [7] right shoulder roll [rad]
-    - [8] right elbow pitkey [rad]
+    - [8] right elbow pitch [rad]
     - [9] right elbow roll [rad]
-    - [10] right wrist pitkey [rad]
-    - [11] left shoulder pitkey [rad]
+    - [10] right wrist pitch [rad]
+    - [11] left shoulder pitch [rad]
     - [12] left shoulder roll [rad]
-    - [13] left elbow pitkey [rad]
+    - [13] left elbow pitch [rad]
     - [14] left elbow roll [rad]
-    - [15] left wrist pitkey [rad]
+    - [15] left wrist pitch [rad]
     """
 
     def __init__(self, keyboard_queue: Queue) -> None:
@@ -54,14 +53,14 @@ class KeyboardController:
         self.active_motion = None
         self.cmd = [0.0 for _ in self.cmd]
 
-    def get_cmd(self, command_names: List[str]) -> List[float]:
+    def get_cmd(self, command_names: Sequence[str]) -> List[float]:
         """Get current command vector."""
         if self.active_motion and (cmd := self.active_motion.get_next_motion_frame()):
             return [cmd.get(name, 0.0) for name in command_names]
         return self.cmd
 
     def _set_motion(self, motion_name: str) -> None:
-        logger.info(f"Setting motion to {motion_name}")
+        logger.info("Setting motion to %s", motion_name)
         self.reset_cmd()
         self.active_motion = MOTIONS[motion_name](dt=0.02)
 
@@ -109,7 +108,7 @@ class KeyboardController:
             elif key == "z":
                 self._set_motion("wave")
             elif key == "x":
-                self._set_motion("salute") 
+                self._set_motion("salute")
             elif key == "c":
                 self._set_motion("come_at_me")
             elif key == "v":
