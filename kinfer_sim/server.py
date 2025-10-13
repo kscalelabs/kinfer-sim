@@ -9,6 +9,7 @@ import time
 import traceback
 from pathlib import Path
 from queue import Empty
+from datetime import datetime
 
 import colorlogging
 import numpy as np
@@ -58,7 +59,7 @@ class ServerConfig(tap.TypedArgs):
     frame_width: int = tap.arg(default=640, help="Frame width")
     frame_height: int = tap.arg(default=480, help="Frame height")
     camera: str | None = tap.arg(default=None, help="Camera to use")
-    save_path: str = tap.arg(default="logs", help="Path to save logs")
+    save_path: str = tap.arg(default="~/.kinfer-sim/logs", help="Path to save logs")
     save_video: bool = tap.arg(default=False, help="Save video")
     save_logs: bool = tap.arg(default=False, help="Save logs")
     free_camera: bool = tap.arg(default=False, help="Free camera")
@@ -136,6 +137,7 @@ class SimulationServer:
         self._save_video = config.save_video
         self._save_logs = config.save_logs
         self._command_provider = command_provider
+        self._run_name = f"{Path(self._kinfer_path).stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self._joint_names: list[str] = load_joint_names(self._kinfer_path)
         self._plots_w_joint_names: frozenset[str] = frozenset({"joint_angles", "joint_velocities", "action"})
 
@@ -236,7 +238,7 @@ class SimulationServer:
                 self.simulator._viewer.close()
 
             if self._save_logs:
-                save_logs(logs, self._save_path / "logs")
+                save_logs(logs, self._save_path / self._run_name)
 
     async def start(self) -> None:
         """Start both the gRPC server and simulation loop asynchronously."""
