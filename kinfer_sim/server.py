@@ -8,6 +8,7 @@ import tarfile
 import time
 import traceback
 from datetime import datetime
+from typing import Any
 from pathlib import Path
 from queue import Empty
 
@@ -179,7 +180,7 @@ class SimulationServer:
             command_provider=self._command_provider,
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider, pre_fetch_time_ms=None)
-        logs = []
+        logs: list[dict[str, Any]] = []
 
         try:
             while not self._stop_event.is_set():
@@ -224,7 +225,7 @@ class SimulationServer:
                 logs.append(
                     {"step_id": self.simulator._step}
                     | model_provider.arrays.copy()
-                    | {"joint_order": self._joint_names}
+                    | {"joint_order": np.asarray(self._joint_names)}
                 )
                 if self._video_writer is not None and self.simulator.sim_time % self._video_render_decimation < ctrl_dt:
                     self._video_writer.append(self.simulator.read_pixels())
