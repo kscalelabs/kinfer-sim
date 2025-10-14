@@ -185,7 +185,7 @@ class ModelProvider(ModelProviderABC):
         if not self.command_provider:
             command_array = np.zeros(len(command_names), dtype=np.float32)
         else:
-            command_array = np.array(self.command_provider.get_cmd(), dtype=np.float32)
+            command_array = np.array(self.command_provider.get_cmd(command_names), dtype=np.float32)
         self.arrays["command"] = command_array
         return command_array
 
