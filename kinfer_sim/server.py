@@ -8,9 +8,9 @@ import tarfile
 import time
 import traceback
 from datetime import datetime
-from typing import Any
 from pathlib import Path
 from queue import Empty
+from typing import Any
 
 import colorlogging
 import numpy as np
