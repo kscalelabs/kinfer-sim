@@ -103,12 +103,14 @@ class PositionActuator(Actuator):
         cls,
         joint_name: str,
         joint_meta: JointMetadataOutput,
+        actuator_meta: ActuatorMetadataOutput | None,
         *,
         dt: float,
     ) -> "PositionActuator":
         if joint_meta.id is None:
             raise ValueError(f"Joint {joint_name}: ID is not specified in metadata")
-        max_torque = float(joint_meta.soft_torque_limit)
+        soft_limit = joint_meta.soft_torque_limit
+        max_torque = float(soft_limit) if soft_limit is not None else None
         joint_min, joint_max = get_joint_limits_from_metadata(joint_meta)
         return cls(
             joint_name=joint_name,
@@ -349,7 +351,7 @@ def create_actuator(
     act_type = (joint_meta.actuator_type or "").lower()
     for prefix, cls in _actuator_registry.items():
         if act_type.startswith(prefix):
-            return cls.from_metadata(joint_name, joint_meta, dt=dt)
+            return cls.from_metadata(joint_name, joint_meta, actuator_meta, dt=dt)
 
     logger.warning("Unknown actuator type '%s', defaulting to PD", act_type)
-    return PositionActuator.from_metadata(joint_name, joint_meta, dt=dt)
+    return PositionActuator.from_metadata(joint_name, joint_meta, actuator_meta, dt=dt)
