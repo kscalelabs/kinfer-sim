@@ -103,15 +103,12 @@ class PositionActuator(Actuator):
         cls,
         joint_name: str,
         joint_meta: JointMetadataOutput,
-        actuator_meta: ActuatorMetadataOutput | None,
         *,
         dt: float,
     ) -> "PositionActuator":
         if joint_meta.id is None:
             raise ValueError(f"Joint {joint_name}: ID is not specified in metadata")
-        max_torque = None
-        if actuator_meta and actuator_meta.max_torque is not None:
-            max_torque = float(actuator_meta.max_torque)
+        max_torque = float(joint_meta.soft_torque_limit)
         joint_min, joint_max = get_joint_limits_from_metadata(joint_meta)
         return cls(
             joint_name=joint_name,
@@ -280,7 +277,7 @@ class FeetechActuator(Actuator):
             joint_id=joint_meta.id,
             kp=_as_float(joint_meta.kp),
             kd=_as_float(joint_meta.kd),
-            max_torque=_as_float(actuator_meta.max_torque),
+            max_torque=_as_float(joint_meta.soft_torque_limit),
             max_pwm=_as_float(actuator_meta.max_pwm, default=1.0),
             vin=_as_float(actuator_meta.vin, default=12.0),
             kt=_as_float(actuator_meta.kt, default=1.0),
@@ -352,7 +349,7 @@ def create_actuator(
     act_type = (joint_meta.actuator_type or "").lower()
     for prefix, cls in _actuator_registry.items():
         if act_type.startswith(prefix):
-            return cls.from_metadata(joint_name, joint_meta, actuator_meta, dt=dt)
+            return cls.from_metadata(joint_name, joint_meta, dt=dt)
 
     logger.warning("Unknown actuator type '%s', defaulting to PD", act_type)
-    return PositionActuator.from_metadata(joint_name, joint_meta, actuator_meta, dt=dt)
+    return PositionActuator.from_metadata(joint_name, joint_meta, dt=dt)
