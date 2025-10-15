@@ -138,7 +138,7 @@ class SimulationServer:
         self._save_video = config.save_video
         self._save_logs = config.save_logs
         self._command_provider = command_provider
-        self._run_name = f"{Path(self._kinfer_path).stem}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_sim"
+        self._run_name = f"{Path(self._kinfer_path).stem}_sim_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self._joint_names: list[str] = load_joint_names(self._kinfer_path)
         self._plots_w_joint_names: frozenset[str] = frozenset({"joint_angles", "joint_velocities", "action", "torque"})
 
