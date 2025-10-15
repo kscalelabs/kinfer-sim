@@ -223,7 +223,7 @@ class SimulationServer:
                 model_provider.arrays["joint_torques"] = torque
                 # log
                 logs.append(
-                    {"step_id": self.simulator._step}
+                    {"step_id": int(self.simulator._step / self.simulator._sim_decimation)}
                     | model_provider.arrays.copy()
                     | {"joint_order": np.asarray(self._joint_names)}
                 )
