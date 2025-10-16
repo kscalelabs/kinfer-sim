@@ -109,9 +109,8 @@ class PositionActuator(Actuator):
     ) -> "PositionActuator":
         if joint_meta.id is None:
             raise ValueError(f"Joint {joint_name}: ID is not specified in metadata")
-        max_torque = None
-        if actuator_meta and actuator_meta.max_torque is not None:
-            max_torque = float(actuator_meta.max_torque)
+        soft_limit = joint_meta.soft_torque_limit
+        max_torque = float(soft_limit) if soft_limit is not None else None
         joint_min, joint_max = get_joint_limits_from_metadata(joint_meta)
         return cls(
             joint_name=joint_name,
@@ -280,7 +279,7 @@ class FeetechActuator(Actuator):
             joint_id=joint_meta.id,
             kp=_as_float(joint_meta.kp),
             kd=_as_float(joint_meta.kd),
-            max_torque=_as_float(actuator_meta.max_torque),
+            max_torque=_as_float(joint_meta.soft_torque_limit),
             max_pwm=_as_float(actuator_meta.max_pwm, default=1.0),
             vin=_as_float(actuator_meta.vin, default=12.0),
             kt=_as_float(actuator_meta.kt, default=1.0),

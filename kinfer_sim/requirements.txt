@@ -4,7 +4,7 @@ kscale
 kinfer>=0.6.1
 mujoco
 mujoco-scenes
-kmv
+kmv>=0.3.22
 numpy
 omegaconf
 scipy

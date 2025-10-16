@@ -7,8 +7,10 @@ import logging
 import tarfile
 import time
 import traceback
+from datetime import datetime
 from pathlib import Path
 from queue import Empty
+from typing import Any
 
 import colorlogging
 import numpy as np
@@ -58,7 +60,7 @@ class ServerConfig(tap.TypedArgs):
     frame_width: int = tap.arg(default=640, help="Frame width")
     frame_height: int = tap.arg(default=480, help="Frame height")
     camera: str | None = tap.arg(default=None, help="Camera to use")
-    save_path: str = tap.arg(default="logs", help="Path to save logs")
+    save_path: str = tap.arg(default="~/.kinfer-sim/logs", help="Path to save logs")
     save_video: bool = tap.arg(default=False, help="Save video")
     save_logs: bool = tap.arg(default=False, help="Save logs")
     free_camera: bool = tap.arg(default=False, help="Free camera")
@@ -136,8 +138,9 @@ class SimulationServer:
         self._save_video = config.save_video
         self._save_logs = config.save_logs
         self._command_provider = command_provider
+        self._run_name = f"{Path(self._kinfer_path).stem}_sim_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         self._joint_names: list[str] = load_joint_names(self._kinfer_path)
-        self._plots_w_joint_names: frozenset[str] = frozenset({"joint_angles", "joint_velocities", "action"})
+        self._plots_w_joint_names: frozenset[str] = frozenset({"joint_angles", "joint_velocities", "action", "torque"})
 
         self._video_writer: VideoWriter | None = None
         if self._save_video:
@@ -177,7 +180,7 @@ class SimulationServer:
             command_provider=self._command_provider,
         )
         model_runner = PyModelRunner(str(self._kinfer_path), model_provider, pre_fetch_time_ms=None)
-        logs = []
+        logs: list[dict[str, Any]] = []
 
         try:
             while not self._stop_event.is_set():
@@ -215,7 +218,15 @@ class SimulationServer:
                     for n, a in model_provider.arrays.items():
                         self.simulator._viewer.push_plot_metrics(scalars=self._to_scalars(n, a), group=n)
 
-                logs.append(model_provider.arrays.copy())
+                # Compute torques for logging/plotting from simulator
+                torque = self.simulator.get_torques(self._joint_names)
+                model_provider.arrays["joint_torques"] = torque
+                # log
+                logs.append(
+                    {"step_id": int(self.simulator._step / self.simulator._sim_decimation)}
+                    | model_provider.arrays.copy()
+                    | {"joint_order": np.asarray(self._joint_names)}
+                )
                 if self._video_writer is not None and self.simulator.sim_time % self._video_render_decimation < ctrl_dt:
                     self._video_writer.append(self.simulator.read_pixels())
 
@@ -236,7 +247,7 @@ class SimulationServer:
                 self.simulator._viewer.close()
 
             if self._save_logs:
-                save_logs(logs, self._save_path / "logs")
+                save_logs(logs, self._save_path / self._run_name)
 
     async def start(self) -> None:
         """Start both the gRPC server and simulation loop asynchronously."""
