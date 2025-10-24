@@ -6,7 +6,7 @@ from queue import Queue
 class KeyboardListener:
     """Keyboard listener that writes all key presses to queues."""
 
-    def __init__(self) -> None:
+    def __init__(self) -> None:  # noqa: PLC0415
         """Initialize keyboard listener with empty queue list and start listening."""
         # import pynput here to avoid errors in headless mode
         from pynput import keyboard
